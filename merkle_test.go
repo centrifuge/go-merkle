@@ -538,25 +538,6 @@ func TestTreeGenerate_DisableHashLeaves_RightNil(t *testing.T) {
 	assert.Equal(t, expectedHash[:], tree.Root().Hash[:])
 }
 
-func TestTreeGenerate_DisableHashLeaves_LeftNil(t *testing.T) {
-	a := md5.Sum([]byte("a"))
-	b := md5.Sum([]byte("b"))
-	c := md5.Sum([]byte("c"))
-	items := [][]byte{nil, a[:], b[:], c[:]}
-
-	tree := NewTreeWithOpts(TreeOptions{false, true})
-	err := tree.Generate(items, sha256.New())
-	assert.Nil(t, err)
-
-	bc := append(b[:], c[:]...)
-	bc_hashed := sha256.Sum256(bc)
-	abc := append(a[:], bc_hashed[:]...)
-	expectedHash := sha256.Sum256(abc)
-
-	assert.Equal(t, expectedHash[:], tree.Root().Hash[:])
-}
-
-
 func TestGenerateNodeHashOfUnbalance(t *testing.T) {
 	tree := Tree{}
 	tree.Options.EnableHashSorting = true
@@ -627,13 +608,13 @@ func TestGenerateFailedHash(t *testing.T) {
 	tree := NewTree()
 	data := createDummyTreeData(16, 16, true)
 	// Fail hash during the leaf generation
-	err := tree.Generate(data, NewFailingHash())
+	err := tree.GenerateByTwoHashFunc(data, NewSimpleHash(), NewFailingHash())
 	assert.NotNil(t, err)
 	assert.Equal(t, err.Error(), "Failed to write hash")
 
 	// Fail hash during internal node generation
 	data = createDummyTreeData(16, 16, true)
-	err = tree.Generate(data, NewFailingHashAt(20))
+	err = tree.GenerateByTwoHashFunc(data, NewFailingHashAt(7), NewSimpleHash())
 	assert.NotNil(t, err)
 	assert.Equal(t, err.Error(), "Failed to write hash")
 }

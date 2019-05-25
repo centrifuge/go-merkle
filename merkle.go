@@ -103,8 +103,12 @@ func (self *Tree) Height() uint64 {
 	return uint64(len(self.Levels))
 }
 
-// Generates the tree nodes
 func (self *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
+	return self.GenerateByTwoHashFunc(blocks, hashf, hashf)
+}
+
+// Generates the tree nodes by using different hash funtions between internal and leaf node
+func (self *Tree) GenerateByTwoHashFunc(blocks [][]byte, nonLeafHash hash.Hash, leafHash hash.Hash) error {
 	blockCount := uint64(len(blocks))
 	if blockCount == 0 {
 		return errors.New("Empty tree")
@@ -120,7 +124,7 @@ func (self *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
 		if self.Options.DisableHashLeaves {
 			node, err = NewNode(nil, block)
 		} else {
-			node, err = NewNode(hashf, block)
+			node, err = NewNode(leafHash, block)
 		}
 		if err != nil {
 			return err
@@ -134,7 +138,7 @@ func (self *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
 	h := height - 1
 	for ; h > 0; h-- {
 		below := levels[h]
-		wrote, err := self.generateNodeLevel(below, current, hashf)
+		wrote, err := self.generateNodeLevel(below, current, nonLeafHash)
 		if err != nil {
 			return err
 		}
@@ -185,10 +189,6 @@ func (self *Tree) generateNode(left, right []byte, h hash.Hash) (Node, error) {
 	if right == nil {
 		data := make([]byte, len(left))
 		copy(data, left)
-		return Node{Hash: data}, nil
-	} else if left == nil {
-		data := make([]byte, len(right))
-		copy(data, right)
 		return Node{Hash: data}, nil
 	}
 
