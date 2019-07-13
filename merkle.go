@@ -33,36 +33,6 @@ type Node struct {
 	Right *Node
 }
 
-type HashCountDecorator struct {
-	Hash  hash.Hash
-	Count int
-}
-
-func (decor *HashCountDecorator) Write(p []byte) (n int, err error) {
-	return decor.Hash.Write(p)
-}
-
-func (decor *HashCountDecorator) Sum(b []byte) []byte {
-	decor.Count = decor.Count + 1
-	return decor.Hash.Sum(b)
-}
-
-func (decor *HashCountDecorator) BlockSize() int {
-	return decor.Hash.BlockSize()
-}
-
-func (decor *HashCountDecorator) Size() int {
-	return decor.Hash.Size()
-}
-
-func (decor *HashCountDecorator) Reset() {
-	decor.Hash.Reset()
-}
-
-func NewHashCountDecorator(h hash.Hash) *HashCountDecorator {
-	return &HashCountDecorator{Hash: h, Count: 0}
-}
-
 // NewNode creates a node given a hash function and data to hash. If the hash function is nil, the data
 // will be added without being hashed.
 func NewNode(h hash.Hash, block []byte, cachedHashes map[string][]byte, emptyLeafHash []byte) (Node, error) {
@@ -103,8 +73,6 @@ type Tree struct {
 	// If left and right child hash of one node are same, then cache this node's hash
 	NonLeafCachedHashes map[string][]byte
 	EmptyLeafHash       []byte
-	LeafHashDecor       *HashCountDecorator
-	NonLeafHashDecor    *HashCountDecorator
 }
 
 func NewTreeWithOpts(options TreeOptions) Tree {
@@ -167,12 +135,8 @@ func emptyNodeHash(h hash.Hash) ([]byte, error) {
 
 // Generates the tree nodes by using different hash funtions between internal and leaf node
 func (self *Tree) GenerateByTwoHashFunc(blocks [][]byte, nonLeafHash hash.Hash, leafHash hash.Hash) error {
-
-	self.LeafHashDecor = NewHashCountDecorator(leafHash)
-	self.NonLeafHashDecor = NewHashCountDecorator(nonLeafHash)
-
 	if !self.Options.DisableHashLeaves {
-		emptyLeafHash, err := emptyNodeHash(self.LeafHashDecor)
+		emptyLeafHash, err := emptyNodeHash(leafHash)
 		if err != nil {
 			return err
 		} else {
@@ -195,7 +159,7 @@ func (self *Tree) GenerateByTwoHashFunc(blocks [][]byte, nonLeafHash hash.Hash, 
 		if self.Options.DisableHashLeaves {
 			node, err = NewNode(nil, block, self.NonLeafCachedHashes, self.EmptyLeafHash)
 		} else {
-			node, err = NewNode(self.LeafHashDecor, block, self.NonLeafCachedHashes, self.EmptyLeafHash)
+			node, err = NewNode(leafHash, block, self.NonLeafCachedHashes, self.EmptyLeafHash)
 		}
 		if err != nil {
 			return err
@@ -209,7 +173,7 @@ func (self *Tree) GenerateByTwoHashFunc(blocks [][]byte, nonLeafHash hash.Hash, 
 	h := height - 1
 	for ; h > 0; h-- {
 		below := levels[h]
-		wrote, err := self.generateNodeLevel(below, current, self.NonLeafHashDecor)
+		wrote, err := self.generateNodeLevel(below, current, nonLeafHash)
 		if err != nil {
 			return err
 		}

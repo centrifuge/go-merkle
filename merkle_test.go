@@ -755,6 +755,36 @@ func BenchmarkGenerate_1GB_2MB_SHA256(b *testing.B) {
 	generateBenchmark(b, data, sha256.New())
 }
 
+type HashCountDecorator struct {
+	Hash  hash.Hash
+	Count *int
+}
+
+func (decor HashCountDecorator) Write(p []byte) (n int, err error) {
+	return decor.Hash.Write(p)
+}
+
+func (decor HashCountDecorator) Sum(b []byte) []byte {
+	*decor.Count = *decor.Count + 1
+	return decor.Hash.Sum(b)
+}
+
+func (decor HashCountDecorator) BlockSize() int {
+	return decor.Hash.BlockSize()
+}
+
+func (decor HashCountDecorator) Size() int {
+	return decor.Hash.Size()
+}
+
+func (decor HashCountDecorator) Reset() {
+	decor.Hash.Reset()
+}
+
+func NewHashCountDecorator(h hash.Hash, count *int) HashCountDecorator {
+	return HashCountDecorator{Hash: h, Count: count}
+}
+
 func Test_Example_complete(t *testing.T) {
 	items := [][]byte{[]byte("alpha"), []byte("beta"), []byte("gamma"), []byte("delta"), []byte("epsilon")}
 
@@ -763,16 +793,22 @@ func Test_Example_complete(t *testing.T) {
 		DisableHashLeaves: false,
 	}
 
+	hash := md5.New()
+	leafHashCount := 0
+	nonLeafHashCount := 0
+	decoratedLeafHash := NewHashCountDecorator(hash, &leafHashCount)
+	decoratedNonLeafHash := NewHashCountDecorator(hash, &nonLeafHashCount)
+
 	tree := NewTreeWithOpts(treeOptions)
-	err := tree.Generate(items, md5.New())
+	err := tree.GenerateByTwoHashFunc(items, decoratedNonLeafHash, decoratedLeafHash)
 	assert.Nil(t, err)
 
 	fmt.Printf("Height: %d\n", tree.Height())
 	fmt.Printf("Root: %v\n", tree.Root())
 	fmt.Printf("N Leaves: %v\n", len(tree.Leaves()))
 	fmt.Printf("Height 2: %v\n", tree.GetNodesAtHeight(2))
-	fmt.Printf("Leaf Hash Computation Counts: %v\n", tree.LeafHashDecor.Count)
-	fmt.Printf("Non Leaf Hash Computation Counts: %v\n", tree.NonLeafHashDecor.Count)
+	fmt.Printf("Leaf Hash Computation Counts: %v\n", leafHashCount)
+	fmt.Printf("Non Leaf Hash Computation Counts: %v\n", nonLeafHashCount)
 }
 
 func TestCacheWithDifferentLeaves(t *testing.T) {
@@ -785,12 +821,17 @@ func TestCacheWithDifferentLeaves(t *testing.T) {
 		DisableHashLeaves: false,
 	}
 
+	leafHashCount := 0
+	nonLeafHashCount := 0
+	hash := md5.New()
+	decoratedLeafHash := NewHashCountDecorator(hash, &leafHashCount)
+	decoratedNonLeafHash := NewHashCountDecorator(hash, &nonLeafHashCount)
 	tree := NewTreeWithOpts(treeOptions)
-	err := tree.Generate(data, md5.New())
+	err := tree.GenerateByTwoHashFunc(data, decoratedNonLeafHash, decoratedLeafHash)
 	assert.Nil(t, err)
-	assert.Equal(t, 15, tree.NonLeafHashDecor.Count)
+	assert.Equal(t, 15, nonLeafHashCount)
 	//16 leaves hash + one more empty leaf hash
-	assert.Equal(t, 16+1, tree.LeafHashDecor.Count)
+	assert.Equal(t, 16+1, leafHashCount)
 
 	treeOptions = TreeOptions{
 		EnableHashSorting: false,
@@ -798,10 +839,12 @@ func TestCacheWithDifferentLeaves(t *testing.T) {
 	}
 
 	tree = NewTreeWithOpts(treeOptions)
-	err = tree.Generate(data, md5.New())
+	leafHashCount = 0
+	nonLeafHashCount = 0
+	err = tree.GenerateByTwoHashFunc(data, decoratedNonLeafHash, decoratedLeafHash)
 	assert.Nil(t, err)
-	assert.Equal(t, 15, tree.NonLeafHashDecor.Count)
-	assert.Equal(t, 0, tree.LeafHashDecor.Count)
+	assert.Equal(t, 15, nonLeafHashCount)
+	assert.Equal(t, 0, leafHashCount)
 }
 
 func TestCacheWithSomeEmptyLeaves(t *testing.T) {
@@ -813,13 +856,18 @@ func TestCacheWithSomeEmptyLeaves(t *testing.T) {
 		DisableHashLeaves: false,
 	}
 
+	leafHashCount := 0
+	nonLeafHashCount := 0
+	hash := md5.New()
+	decoratedLeafHash := NewHashCountDecorator(hash, &leafHashCount)
+	decoratedNonLeafHash := NewHashCountDecorator(hash, &nonLeafHashCount)
 	tree := NewTreeWithOpts(treeOptions)
-	err := tree.Generate(items, md5.New())
+	err := tree.GenerateByTwoHashFunc(items, decoratedNonLeafHash, decoratedLeafHash)
 	assert.Nil(t, err)
 	//Hash computation count of every level of tree (do not include leaf hash) is : (2+1) + (1+1) + (1+1) + (1+1) + (1)
-	assert.Equal(t, tree.NonLeafHashDecor.Count, 10)
+	assert.Equal(t, nonLeafHashCount, 10)
 
-	assert.Equal(t, tree.LeafHashDecor.Count, 5)
+	assert.Equal(t, leafHashCount, 5)
 
 	//5 empty leaves
 	items = [][]byte{[]byte("alpha1"), []byte("alpha2"), []byte{}, []byte{}, []byte{}, []byte{}, []byte{}}
@@ -830,11 +878,13 @@ func TestCacheWithSomeEmptyLeaves(t *testing.T) {
 	}
 
 	tree = NewTreeWithOpts(treeOptions)
-	err = tree.Generate(items, md5.New())
+	leafHashCount = 0
+	nonLeafHashCount = 0
+	err = tree.GenerateByTwoHashFunc(items, decoratedNonLeafHash, decoratedLeafHash)
 	assert.Nil(t, err)
 
 	//Hash computation count of every level of tree (do not include leaf hash) is : (1+1) + (1+1) + (1)
-	assert.Equal(t, 5, tree.NonLeafHashDecor.Count)
+	assert.Equal(t, 5, nonLeafHashCount)
 
-	assert.Equal(t, 3, tree.LeafHashDecor.Count)
+	assert.Equal(t, 3, leafHashCount)
 }
