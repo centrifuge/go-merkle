@@ -9,6 +9,7 @@ package merkle
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"hash"
 )
 
@@ -32,15 +33,56 @@ type Node struct {
 	Right *Node
 }
 
+type HashCountDecorator struct {
+	Hash  hash.Hash
+	Count int
+}
+
+func (decor *HashCountDecorator) Write(p []byte) (n int, err error) {
+	return decor.Hash.Write(p)
+}
+
+func (decor *HashCountDecorator) Sum(b []byte) []byte {
+	decor.Count = decor.Count + 1
+	return decor.Hash.Sum(b)
+}
+
+func (decor *HashCountDecorator) BlockSize() int {
+	return decor.Hash.BlockSize()
+}
+
+func (decor *HashCountDecorator) Size() int {
+	return decor.Hash.Size()
+}
+
+func (decor *HashCountDecorator) Reset() {
+	decor.Hash.Reset()
+}
+
+func NewHashCountDecorator(h hash.Hash) *HashCountDecorator {
+	return &HashCountDecorator{Hash: h, Count: 0}
+}
+
 // NewNode creates a node given a hash function and data to hash. If the hash function is nil, the data
 // will be added without being hashed.
-func NewNode(h hash.Hash, block []byte) (Node, error) {
+func NewNode(h hash.Hash, block []byte, cachedHashes map[string][]byte, emptyLeafHash []byte) (Node, error) {
 	if h == nil {
 		return Node{Hash: block}, nil
 	}
 	if block == nil {
 		return Node{}, nil
 	}
+	if emptyLeafHash != nil && bytes.Compare([]byte{}, block) == 0 {
+		return Node{Hash: emptyLeafHash}, nil
+	}
+	if cachedHashes != nil {
+		hexStr := fmt.Sprintf("%x", block)
+		cachedHash := cachedHashes[hexStr]
+		if cachedHash != nil {
+			return Node{Hash: cachedHash}, nil
+		}
+	}
+
 	defer h.Reset()
 	_, err := h.Write(block[:])
 	if err != nil {
@@ -57,6 +99,12 @@ type Tree struct {
 	Levels [][]Node
 	// Any particular behavior changing option
 	Options TreeOptions
+
+	// If left and right child hash of one node are same, then cache this node's hash
+	NonLeafCachedHashes map[string][]byte
+	EmptyLeafHash       []byte
+	LeafHashDecor       *HashCountDecorator
+	NonLeafHashDecor    *HashCountDecorator
 }
 
 func NewTreeWithOpts(options TreeOptions) Tree {
@@ -107,8 +155,31 @@ func (self *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
 	return self.GenerateByTwoHashFunc(blocks, hashf, hashf)
 }
 
+func emptyNodeHash(h hash.Hash) ([]byte, error) {
+	defer h.Reset()
+	_, err := h.Write([]byte{})
+	if err != nil {
+		return []byte{}, err
+	}
+	hash := h.Sum(nil)
+	return hash, nil
+}
+
 // Generates the tree nodes by using different hash funtions between internal and leaf node
 func (self *Tree) GenerateByTwoHashFunc(blocks [][]byte, nonLeafHash hash.Hash, leafHash hash.Hash) error {
+
+	self.LeafHashDecor = NewHashCountDecorator(leafHash)
+	self.NonLeafHashDecor = NewHashCountDecorator(nonLeafHash)
+
+	if !self.Options.DisableHashLeaves {
+		emptyLeafHash, err := emptyNodeHash(self.LeafHashDecor)
+		if err != nil {
+			return err
+		} else {
+			self.EmptyLeafHash = emptyLeafHash
+		}
+	}
+
 	blockCount := uint64(len(blocks))
 	if blockCount == 0 {
 		return errors.New("Empty tree")
@@ -122,9 +193,9 @@ func (self *Tree) GenerateByTwoHashFunc(blocks [][]byte, nonLeafHash hash.Hash, 
 		var node Node
 		var err error
 		if self.Options.DisableHashLeaves {
-			node, err = NewNode(nil, block)
+			node, err = NewNode(nil, block, self.NonLeafCachedHashes, self.EmptyLeafHash)
 		} else {
-			node, err = NewNode(leafHash, block)
+			node, err = NewNode(self.LeafHashDecor, block, self.NonLeafCachedHashes, self.EmptyLeafHash)
 		}
 		if err != nil {
 			return err
@@ -138,7 +209,7 @@ func (self *Tree) GenerateByTwoHashFunc(blocks [][]byte, nonLeafHash hash.Hash, 
 	h := height - 1
 	for ; h > 0; h-- {
 		below := levels[h]
-		wrote, err := self.generateNodeLevel(below, current, nonLeafHash)
+		wrote, err := self.generateNodeLevel(below, current, self.NonLeafHashDecor)
 		if err != nil {
 			return err
 		}
@@ -185,6 +256,21 @@ func (self *Tree) generateNodeLevel(below []Node, current []Node,
 	return uint64(end), nil
 }
 
+func (self *Tree) cacheHash(parentFromSameChilds []byte, h hash.Hash) {
+
+	if self.NonLeafCachedHashes == nil {
+		self.NonLeafCachedHashes = map[string][]byte{}
+	}
+	hexStr := fmt.Sprintf("%x", parentFromSameChilds)
+	if self.NonLeafCachedHashes[hexStr] != nil {
+		return
+	}
+	defer h.Reset()
+	h.Write(parentFromSameChilds[:])
+
+	self.NonLeafCachedHashes[hexStr] = h.Sum(nil)
+}
+
 func (self *Tree) generateNode(left, right []byte, h hash.Hash) (Node, error) {
 	if right == nil {
 		data := make([]byte, len(left))
@@ -200,8 +286,10 @@ func (self *Tree) generateNode(left, right []byte, h hash.Hash) (Node, error) {
 		copy(data[:len(left)], left)
 		copy(data[len(left):], right)
 	}
-
-	return NewNode(h, data)
+	if bytes.Compare(left, right) == 0 {
+		self.cacheHash(data, h)
+	}
+	return NewNode(h, data, self.NonLeafCachedHashes, self.EmptyLeafHash)
 }
 
 // Returns the height and number of nodes in an unbalanced binary tree given
