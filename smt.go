@@ -15,10 +15,6 @@ import (
 
 // TreeOptions configures tree behavior
 type SMTOptions struct {
-	// EnableHashSorting modifies the tree's hash behavior to sort the hashes before concatenating them
-	// to calculate the parent hash. This removes the capability of proving the position in the tree but
-	// simplifies the proof format by removing the need to specify left/right.
-	EnableHashSorting bool
 
 	// DisableHashLeaves determines whether leaf nodes should be hashed or not. By doing disabling this behavior,
 	// you can use a different hash function for leaves or generate a tree that contains already hashed
@@ -28,15 +24,8 @@ type SMTOptions struct {
 
 // Tree contains all nodes
 type SMT struct {
-	// All nodes, linear
-	//Nodes []Node
-	// Points to each level in the node. The first level contains the root node
-	//Levels [][]Node
-	// Any particular behavior changing option
 	Options SMTOptions
 
-	// If left and right child hash of one node are same, then cache this node's hash
-	//NonLeafCachedHashes map[string][]byte
 	EmptyLeafHash []byte
 
 	CachedAllLevelsHashOfEmptyLeaves    [][]byte
@@ -61,6 +50,26 @@ type SMTNode interface {
 	GetHash(tree *SMT) []byte
 	GetLeftHashHex(tree *SMT) string
 	GetRightHashHex(tree *SMT) string
+}
+
+type LeafNode struct {
+	Hash []byte
+}
+
+func NewLeafNode(hash []byte) SMTNode {
+	return LeafNode{Hash: hash}
+}
+
+func (node LeafNode) GetHash(tree *SMT) []byte {
+	return node.Hash
+}
+
+func (node LeafNode) GetLeftHashHex(tree *SMT) string {
+	return ""
+}
+
+func (node LeafNode) GetRightHashHex(tree *SMT) string {
+	return ""
 }
 
 type NodeWithAtLeastOneNonEmptyLeafInLeftChild struct {
@@ -108,7 +117,7 @@ func (self SMT) Generate(blocks [][]byte, hashf hash.Hash) error {
 	return self.GenerateByTwoHashFunc(blocks, hashf, hashf)
 }
 
-func emptyNodeHash(h hash.Hash) ([]byte, error) {
+func emptyLeafHash(h hash.Hash) ([]byte, error) {
 	defer h.Reset()
 	_, err := h.Write([]byte{})
 	if err != nil {
@@ -123,6 +132,13 @@ func (self *SMT) GenerateByTwoHashFunc(blocks [][]byte, leafHash hash.Hash, nonL
 	if !isPowerOfTwo(uint64(len(blocks))) {
 		return errors.New("Leaves number of SMT tree should be power of 2")
 	}
+
+	emptyLeafHash, err := emptyLeafHash(leafHash)
+	if err != nil {
+		return err
+	}
+	self.EmptyLeafHash = emptyLeafHash
+
 	root, err := self.GenerateSMT(0, len(blocks)-1, blocks, leafHash, nonLeafHash)
 	fmt.Printf("root is    %v\n\n", root)
 	if err == nil {
@@ -135,7 +151,7 @@ func (self *SMT) GetRoot() []byte {
 	return self.Root
 }
 
-func computeHashByTwoItems(item1 []byte, item2 []byte, hash hash.Hash) ([]byte, error) {
+func parentHash(item1 []byte, item2 []byte, hash hash.Hash) ([]byte, error) {
 	defer hash.Reset()
 	combinedItem := make([]byte, len(item1)+len(item2))
 	copy(combinedItem[:len(item1)], item1)
@@ -148,27 +164,37 @@ func computeHashByTwoItems(item1 []byte, item2 []byte, hash hash.Hash) ([]byte, 
 	return hash.Sum(nil), nil
 }
 
-func (self *SMT) computeHashOfOneItem(item []byte, hash hash.Hash) ([]byte, error) {
-	defer hash.Reset()
-	if bytes.Compare(item, []byte{}) == 0 {
-		var result []byte
-		var err error
-		if self.EmptyLeafHash != nil {
-			result = self.EmptyLeafHash
-		} else {
-			result, err = emptyNodeHash(hash)
-			if err != nil {
-				return []byte{}, err
-			}
-			self.EmptyLeafHash = result
-		}
-		return result, nil
+func (self *SMT) isEmptyLeaf(item []byte) bool {
+	if self.Options.DisableHashLeaves {
+		return bytes.Equal(item, self.EmptyLeafHash)
+	} else {
+		return bytes.Equal(item, []byte{})
 	}
-	_, err := hash.Write(item[:])
+}
+
+func (self *SMT) leafHash(leaf []byte, hash hash.Hash) ([]byte, error) {
+	defer hash.Reset()
+
+	if hash == nil || self.Options.DisableHashLeaves {
+		leafHashHex := fmt.Sprintf("%x", leaf)
+		self.Nodes[leafHashHex] = NewLeafNode(leaf)
+		return leaf, nil
+	}
+
+	if self.isEmptyLeaf(leaf) {
+		leafHashHex := fmt.Sprintf("%x", self.EmptyLeafHash)
+		self.Nodes[leafHashHex] = NewLeafNode(self.EmptyLeafHash)
+		return self.EmptyLeafHash, nil
+	}
+
+	_, err := hash.Write(leaf[:])
 	if err != nil {
 		return []byte{}, err
 	}
-	return hash.Sum(nil), nil
+	leafHash := hash.Sum(nil)
+	leafHashHex := fmt.Sprintf("%x", leafHash)
+	self.Nodes[leafHashHex] = NewLeafNode(leafHash)
+	return leafHash, nil
 }
 
 func (self *SMT) ComputeEmptyLeavesSubTreeHash(leavesNumber int, leafHash hash.Hash, nonLeafHash hash.Hash) ([]byte, error) {
@@ -179,7 +205,7 @@ func (self *SMT) ComputeEmptyLeavesSubTreeHash(leavesNumber int, leafHash hash.H
 		if self.EmptyLeafHash != nil && !bytes.Equal(self.EmptyLeafHash, []byte{}) {
 			hash = self.EmptyLeafHash
 		} else {
-			hash, err = emptyNodeHash(leafHash)
+			hash, err = emptyLeafHash(leafHash)
 			if err != nil {
 				return []byte{}, err
 			}
@@ -188,7 +214,7 @@ func (self *SMT) ComputeEmptyLeavesSubTreeHash(leavesNumber int, leafHash hash.H
 		if self.CachedAllLevelsHashOfEmptyLeaves != nil && len(self.CachedAllLevelsHashOfEmptyLeaves) > 0 {
 			hash = self.CachedAllLevelsHashOfEmptyLeaves[0]
 		} else {
-			hash, err = computeHashByTwoItems(hash, hash, nonLeafHash)
+			hash, err = parentHash(hash, hash, nonLeafHash)
 			if err != nil {
 				return []byte{}, err
 			}
@@ -210,7 +236,7 @@ func (self *SMT) ComputeEmptyLeavesSubTreeHash(leavesNumber int, leafHash hash.H
 	if err != nil {
 		return []byte{}, nil
 	}
-	combinedHash, err := computeHashByTwoItems(nextLevelHash, nextLevelHash, nonLeafHash)
+	combinedHash, err := parentHash(nextLevelHash, nextLevelHash, nonLeafHash)
 	if err != nil {
 		return []byte{}, nil
 	}
@@ -227,20 +253,20 @@ func (self *SMT) GenerateSMT(start int, end int, blocks [][]byte, leafHash hash.
 	//fmt.Println("here called")
 	totalEle := (end - start) + 1
 
-	if bytes.Compare(blocks[start], []byte{}) == 0 {
+	if self.isEmptyLeaf(blocks[start]) {
 		return self.ComputeEmptyLeavesSubTreeHash(totalEle, leafHash, nonLeafHash)
 	}
 
 	if totalEle == 2 {
-		left, err := self.computeHashOfOneItem(blocks[start], leafHash)
+		left, err := self.leafHash(blocks[start], leafHash)
 		if err != nil {
 			return []byte{}, nil
 		}
-		right, err := self.computeHashOfOneItem(blocks[start+1], leafHash)
+		right, err := self.leafHash(blocks[start+1], leafHash)
 		if err != nil {
 			return []byte{}, nil
 		}
-		hash, err := computeHashByTwoItems(left, right, nonLeafHash)
+		hash, err := parentHash(left, right, nonLeafHash)
 		if err != nil {
 			return []byte{}, nil
 		}
@@ -258,7 +284,7 @@ func (self *SMT) GenerateSMT(start int, end int, blocks [][]byte, leafHash hash.
 
 	var rightHash []byte
 	var err error
-	if bytes.Compare(blocks[rightStart], []byte{}) == 0 {
+	if self.isEmptyLeaf(blocks[rightStart]) {
 		rightHash, err = self.ComputeEmptyLeavesSubTreeHash(rightEnd-rightStart+1, leafHash, nonLeafHash)
 	} else {
 		rightHash, err = self.GenerateSMT(rightStart, rightEnd, blocks, leafHash, nonLeafHash)
@@ -272,7 +298,7 @@ func (self *SMT) GenerateSMT(start int, end int, blocks [][]byte, leafHash hash.
 		return []byte{}, err
 	}
 
-	hash, err := computeHashByTwoItems(leftHash, rightHash, nonLeafHash)
+	hash, err := parentHash(leftHash, rightHash, nonLeafHash)
 	if err != nil {
 		return []byte{}, nil
 	}

@@ -9,7 +9,6 @@ package merkle
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"hash"
 )
 
@@ -46,9 +45,6 @@ func NewNode(h hash.Hash, block []byte) (Node, error) {
 	_, err := h.Write(block[:])
 	if err != nil {
 		return Node{}, err
-	}
-	if bytes.Equal(block, []byte{}) {
-		fmt.Printf("hhahhaempty leaf hash is %v\n\n", h.Sum(nil))
 	}
 	return Node{Hash: h.Sum(nil)}, nil
 }
