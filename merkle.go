@@ -8,8 +8,8 @@ package merkle
 
 import (
 	"bytes"
-	"errors"
-	"fmt"
+  "errors"
+  "fmt"
 	"hash"
 )
 
@@ -35,29 +35,21 @@ type Node struct {
 
 // NewNode creates a node given a hash function and data to hash. If the hash function is nil, the data
 // will be added without being hashed.
-func NewNode(h hash.Hash, block []byte, cachedHashes map[string][]byte, emptyLeafHash []byte) (Node, error) {
+func NewNode(h hash.Hash, block []byte) (Node, error) {
 	if h == nil {
 		return Node{Hash: block}, nil
 	}
 	if block == nil {
 		return Node{}, nil
 	}
-	if emptyLeafHash != nil && bytes.Compare([]byte{}, block) == 0 {
-		return Node{Hash: emptyLeafHash}, nil
-	}
-	if cachedHashes != nil {
-		hexStr := fmt.Sprintf("%x", block)
-		cachedHash := cachedHashes[hexStr]
-		if cachedHash != nil {
-			return Node{Hash: cachedHash}, nil
-		}
-	}
-
 	defer h.Reset()
 	_, err := h.Write(block[:])
 	if err != nil {
 		return Node{}, err
-	}
+  }
+  if bytes.Equal(block, []byte{}){
+    fmt.Printf("hhahhaempty leaf hash is %v\n\n", h.Sum(nil))
+  }
 	return Node{Hash: h.Sum(nil)}, nil
 }
 
@@ -69,10 +61,6 @@ type Tree struct {
 	Levels [][]Node
 	// Any particular behavior changing option
 	Options TreeOptions
-
-	// If left and right child hash of one node are same, then cache this node's hash
-	NonLeafCachedHashes map[string][]byte
-	EmptyLeafHash       []byte
 }
 
 func NewTreeWithOpts(options TreeOptions) Tree {
@@ -123,27 +111,8 @@ func (self *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
 	return self.GenerateByTwoHashFunc(blocks, hashf, hashf)
 }
 
-func emptyNodeHash(h hash.Hash) ([]byte, error) {
-	defer h.Reset()
-	_, err := h.Write([]byte{})
-	if err != nil {
-		return []byte{}, err
-	}
-	hash := h.Sum(nil)
-	return hash, nil
-}
-
 // Generates the tree nodes by using different hash funtions between internal and leaf node
 func (self *Tree) GenerateByTwoHashFunc(blocks [][]byte, nonLeafHash hash.Hash, leafHash hash.Hash) error {
-	if !self.Options.DisableHashLeaves {
-		emptyLeafHash, err := emptyNodeHash(leafHash)
-		if err != nil {
-			return err
-		} else {
-			self.EmptyLeafHash = emptyLeafHash
-		}
-	}
-
 	blockCount := uint64(len(blocks))
 	if blockCount == 0 {
 		return errors.New("Empty tree")
@@ -157,9 +126,9 @@ func (self *Tree) GenerateByTwoHashFunc(blocks [][]byte, nonLeafHash hash.Hash, 
 		var node Node
 		var err error
 		if self.Options.DisableHashLeaves {
-			node, err = NewNode(nil, block, self.NonLeafCachedHashes, self.EmptyLeafHash)
+			node, err = NewNode(nil, block)
 		} else {
-			node, err = NewNode(leafHash, block, self.NonLeafCachedHashes, self.EmptyLeafHash)
+			node, err = NewNode(leafHash, block)
 		}
 		if err != nil {
 			return err
@@ -220,21 +189,6 @@ func (self *Tree) generateNodeLevel(below []Node, current []Node,
 	return uint64(end), nil
 }
 
-func (self *Tree) cacheHash(parentFromSameChilds []byte, h hash.Hash) {
-
-	if self.NonLeafCachedHashes == nil {
-		self.NonLeafCachedHashes = map[string][]byte{}
-	}
-	hexStr := fmt.Sprintf("%x", parentFromSameChilds)
-	if self.NonLeafCachedHashes[hexStr] != nil {
-		return
-	}
-	defer h.Reset()
-	h.Write(parentFromSameChilds[:])
-
-	self.NonLeafCachedHashes[hexStr] = h.Sum(nil)
-}
-
 func (self *Tree) generateNode(left, right []byte, h hash.Hash) (Node, error) {
 	if right == nil {
 		data := make([]byte, len(left))
@@ -250,10 +204,8 @@ func (self *Tree) generateNode(left, right []byte, h hash.Hash) (Node, error) {
 		copy(data[:len(left)], left)
 		copy(data[len(left):], right)
 	}
-	if bytes.Compare(left, right) == 0 {
-		self.cacheHash(data, h)
-	}
-	return NewNode(h, data, self.NonLeafCachedHashes, self.EmptyLeafHash)
+
+	return NewNode(h, data)
 }
 
 // Returns the height and number of nodes in an unbalanced binary tree given
@@ -289,74 +241,4 @@ func calculateTreeHeight(nodeCount uint64) uint64 {
 	} else {
 		return logBaseTwo(nextPowerOfTwo(nodeCount)) + 1
 	}
-}
-
-// Returns true if n is a power of 2
-func isPowerOfTwo(n uint64) bool {
-	// http://graphics.stanford.edu/~seander/bithacks.html#DetermineIfPowerOf2
-	return n != 0 && (n&(n-1)) == 0
-}
-
-// Returns the next highest power of 2 above n, if n is not already a
-// power of 2
-func nextPowerOfTwo(n uint64) uint64 {
-	if n == 0 {
-		return 1
-	}
-	// http://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2
-	n--
-	n |= n >> 1
-	n |= n >> 2
-	n |= n >> 4
-	n |= n >> 8
-	n |= n >> 16
-	n |= n >> 32
-	n++
-	return n
-}
-
-// Lookup table for integer log2 implementation
-var log2lookup []uint64 = []uint64{
-	0xFFFFFFFF00000000,
-	0x00000000FFFF0000,
-	0x000000000000FF00,
-	0x00000000000000F0,
-	0x000000000000000C,
-	0x0000000000000002,
-}
-
-// Returns log2(n) assuming n is a power of 2
-func logBaseTwo(x uint64) uint64 {
-	if x == 0 {
-		return 0
-	}
-	ct := uint64(0)
-	for x != 0 {
-		x >>= 1
-		ct += 1
-	}
-	return ct - 1
-}
-
-// Returns the ceil'd log2 value of n
-// See: http://stackoverflow.com/a/15327567
-func ceilLogBaseTwo(x uint64) uint64 {
-	y := uint64(1)
-	if (x & (x - 1)) == 0 {
-		y = 0
-	}
-	j := uint64(32)
-	i := uint64(0)
-
-	for ; i < 6; i++ {
-		k := j
-		if (x & log2lookup[i]) == 0 {
-			k = 0
-		}
-		y += k
-		x >>= k
-		j >>= 1
-	}
-
-	return y
 }

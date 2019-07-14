@@ -1,3 +1,4 @@
+
 /* Copyright 2013 Steve Leonard <sleonard76@gmail.com>. All rights reserved.
 Use of this source code is governed by the MIT license that can be found
 in the LICENSE file.
@@ -390,26 +391,26 @@ func verifyInitialState(t *testing.T, tree *Tree) {
 func TestNewNode(t *testing.T) {
 	h := NewSimpleHash()
 	block := createDummyTreeData(1, h.Size(), true)[0]
-	n, err := NewNode(h, block, nil, nil)
+	n, err := NewNode(h, block)
 	assert.Nil(t, err)
 	assert.Equal(t, bytes.Equal(n.Hash, block), true)
 
 	// Passing a nil hash function should create a node with the unhashed block
-	n, err = NewNode(nil, block, nil, nil)
+	n, err = NewNode(nil, block)
 	assert.Nil(t, err)
 	assert.Equal(t, n.Hash, block)
 
 	// Any nil argument should return blank node, no error
-	n, err = NewNode(nil, nil, nil, nil)
+	n, err = NewNode(nil, nil)
 	assert.Nil(t, err)
 	assert.Nil(t, n.Hash)
-	n, err = NewNode(h, nil, nil, nil)
+	n, err = NewNode(h, nil)
 	assert.Nil(t, err)
 	assert.Nil(t, n.Hash)
 
 	// Check hash error handling
 	h = NewFailingHash()
-	n, err = NewNode(h, block, nil, nil)
+	n, err = NewNode(h, block)
 	assert.NotNil(t, err)
 	assert.Equal(t, err.Error(), "Failed to write hash")
 }
@@ -561,7 +562,7 @@ func TestGenerateNodeHashOrdered(t *testing.T) {
 	copy(data[:h.Size()], sampleRight)
 	copy(data[h.Size():], sampleLeft)
 
-	expected, _ := NewNode(h, data, nil, nil)
+	expected, _ := NewNode(h, data)
 	n, err := tree.generateNode(sampleLeft, sampleRight, h)
 	assert.Nil(t, err)
 	assert.Equal(t, expected.Hash, n.Hash)
@@ -577,7 +578,7 @@ func TestGenerateNodeHashStandard(t *testing.T) {
 	copy(data[:h.Size()], sampleRight)
 	copy(data[h.Size():], sampleLeft)
 
-	expected, _ := NewNode(h, data, nil, nil)
+	expected, _ := NewNode(h, data)
 	n, err := tree.generateNode(sampleLeft, sampleRight, h)
 	assert.Nil(t, err)
 	assert.Equal(t, expected.Hash, n.Hash)
@@ -755,37 +756,7 @@ func BenchmarkGenerate_1GB_2MB_SHA256(b *testing.B) {
 	generateBenchmark(b, data, sha256.New())
 }
 
-type HashCountDecorator struct {
-	Hash  hash.Hash
-	Count *int
-}
-
-func (decor HashCountDecorator) Write(p []byte) (n int, err error) {
-	return decor.Hash.Write(p)
-}
-
-func (decor HashCountDecorator) Sum(b []byte) []byte {
-	*decor.Count = *decor.Count + 1
-	return decor.Hash.Sum(b)
-}
-
-func (decor HashCountDecorator) BlockSize() int {
-	return decor.Hash.BlockSize()
-}
-
-func (decor HashCountDecorator) Size() int {
-	return decor.Hash.Size()
-}
-
-func (decor HashCountDecorator) Reset() {
-	decor.Hash.Reset()
-}
-
-func NewHashCountDecorator(h hash.Hash, count *int) HashCountDecorator {
-	return HashCountDecorator{Hash: h, Count: count}
-}
-
-func Test_Example_complete(t *testing.T) {
+func Example_complete() {
 	items := [][]byte{[]byte("alpha"), []byte("beta"), []byte("gamma"), []byte("delta"), []byte("epsilon")}
 
 	treeOptions := TreeOptions{
@@ -793,98 +764,15 @@ func Test_Example_complete(t *testing.T) {
 		DisableHashLeaves: false,
 	}
 
-	hash := md5.New()
-	leafHashCount := 0
-	nonLeafHashCount := 0
-	decoratedLeafHash := NewHashCountDecorator(hash, &leafHashCount)
-	decoratedNonLeafHash := NewHashCountDecorator(hash, &nonLeafHashCount)
-
 	tree := NewTreeWithOpts(treeOptions)
-	err := tree.GenerateByTwoHashFunc(items, decoratedNonLeafHash, decoratedLeafHash)
-	assert.Nil(t, err)
+	err := tree.Generate(items, md5.New())
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
 
 	fmt.Printf("Height: %d\n", tree.Height())
 	fmt.Printf("Root: %v\n", tree.Root())
 	fmt.Printf("N Leaves: %v\n", len(tree.Leaves()))
 	fmt.Printf("Height 2: %v\n", tree.GetNodesAtHeight(2))
-	fmt.Printf("Leaf Hash Computation Counts: %v\n", leafHashCount)
-	fmt.Printf("Non Leaf Hash Computation Counts: %v\n", nonLeafHashCount)
-}
-
-func TestCacheWithDifferentLeaves(t *testing.T) {
-	blockCount := 16
-	blockSize := 16
-	data := createDummyTreeData(blockCount, blockSize, true)
-
-	treeOptions := TreeOptions{
-		EnableHashSorting: false,
-		DisableHashLeaves: false,
-	}
-
-	leafHashCount := 0
-	nonLeafHashCount := 0
-	hash := md5.New()
-	decoratedLeafHash := NewHashCountDecorator(hash, &leafHashCount)
-	decoratedNonLeafHash := NewHashCountDecorator(hash, &nonLeafHashCount)
-	tree := NewTreeWithOpts(treeOptions)
-	err := tree.GenerateByTwoHashFunc(data, decoratedNonLeafHash, decoratedLeafHash)
-	assert.Nil(t, err)
-	assert.Equal(t, 15, nonLeafHashCount)
-	//16 leaves hash + one more empty leaf hash
-	assert.Equal(t, 16+1, leafHashCount)
-
-	treeOptions = TreeOptions{
-		EnableHashSorting: false,
-		DisableHashLeaves: true,
-	}
-
-	tree = NewTreeWithOpts(treeOptions)
-	leafHashCount = 0
-	nonLeafHashCount = 0
-	err = tree.GenerateByTwoHashFunc(data, decoratedNonLeafHash, decoratedLeafHash)
-	assert.Nil(t, err)
-	assert.Equal(t, 15, nonLeafHashCount)
-	assert.Equal(t, 0, leafHashCount)
-}
-
-func TestCacheWithSomeEmptyLeaves(t *testing.T) {
-	//28 empty leaves
-	items := [][]byte{[]byte("alpha1"), []byte("alpha2"), []byte("alpha3"), []byte("alpha4"), []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}, []byte{}}
-
-	treeOptions := TreeOptions{
-		EnableHashSorting: false,
-		DisableHashLeaves: false,
-	}
-
-	leafHashCount := 0
-	nonLeafHashCount := 0
-	hash := md5.New()
-	decoratedLeafHash := NewHashCountDecorator(hash, &leafHashCount)
-	decoratedNonLeafHash := NewHashCountDecorator(hash, &nonLeafHashCount)
-	tree := NewTreeWithOpts(treeOptions)
-	err := tree.GenerateByTwoHashFunc(items, decoratedNonLeafHash, decoratedLeafHash)
-	assert.Nil(t, err)
-	//Hash computation count of every level of tree (do not include leaf hash) is : (2+1) + (1+1) + (1+1) + (1+1) + (1)
-	assert.Equal(t, nonLeafHashCount, 10)
-
-	assert.Equal(t, leafHashCount, 5)
-
-	//5 empty leaves
-	items = [][]byte{[]byte("alpha1"), []byte("alpha2"), []byte{}, []byte{}, []byte{}, []byte{}, []byte{}}
-
-	treeOptions = TreeOptions{
-		EnableHashSorting: false,
-		DisableHashLeaves: false,
-	}
-
-	tree = NewTreeWithOpts(treeOptions)
-	leafHashCount = 0
-	nonLeafHashCount = 0
-	err = tree.GenerateByTwoHashFunc(items, decoratedNonLeafHash, decoratedLeafHash)
-	assert.Nil(t, err)
-
-	//Hash computation count of every level of tree (do not include leaf hash) is : (1+1) + (1+1) + (1)
-	assert.Equal(t, 5, nonLeafHashCount)
-
-	assert.Equal(t, 3, leafHashCount)
 }
