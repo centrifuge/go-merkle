@@ -26,13 +26,6 @@ type SMTOptions struct {
 	DisableHashLeaves bool
 }
 
-// Node in the merkle tree
-type SMTNode struct {
-	Hash  []byte
-	Left  *Node
-	Right *Node
-}
-
 // Tree contains all nodes
 type SMT struct {
 	// All nodes, linear
@@ -46,9 +39,12 @@ type SMT struct {
 	//NonLeafCachedHashes map[string][]byte
 	EmptyLeafHash []byte
 
-  CachedAllLevelsHashOfEmptyLeaves [][]byte
+	CachedAllLevelsHashOfEmptyLeaves    [][]byte
+	CachedAllLevelsHashHexOfEmptyLeaves []string
+	CachedLevels                        int
 
-  Root []byte
+	Root  []byte
+	Nodes map[string]SMTNode
 }
 
 func NewSMTWithOpts(options SMTOptions) SMT {
@@ -58,10 +54,57 @@ func NewSMTWithOpts(options SMTOptions) SMT {
 }
 
 func NewSMT() SMT {
-	return SMT{}
+	return SMT{Nodes: map[string]SMTNode{}, CachedAllLevelsHashOfEmptyLeaves: [][]byte{}, CachedAllLevelsHashHexOfEmptyLeaves: []string{}}
 }
 
-func (self *SMT) Generate(blocks [][]byte, hashf hash.Hash) error {
+type SMTNode interface {
+	GetHash(tree *SMT) []byte
+	GetLeftHashHex(tree *SMT) string
+	GetRightHashHex(tree *SMT) string
+}
+
+type NodeWithAtLeastOneNonEmptyLeafInLeftChild struct {
+	Hash                    []byte
+	LeftChildHashHexString  string
+	RightChildHashHexString string
+}
+
+func NewNodeWithAtLeastOneNonEmptyLeafInLeftChild(hash []byte, left string, right string) SMTNode {
+	return NodeWithAtLeastOneNonEmptyLeafInLeftChild{Hash: hash, LeftChildHashHexString: left, RightChildHashHexString: right}
+}
+
+func (node NodeWithAtLeastOneNonEmptyLeafInLeftChild) GetHash(tree *SMT) []byte {
+	return node.Hash
+}
+
+func (node NodeWithAtLeastOneNonEmptyLeafInLeftChild) GetLeftHashHex(tree *SMT) string {
+	return node.LeftChildHashHexString
+}
+
+func (node NodeWithAtLeastOneNonEmptyLeafInLeftChild) GetRightHashHex(tree *SMT) string {
+	return node.RightChildHashHexString
+}
+
+type NodeWithAllEmptyLeaf struct {
+	Index int
+}
+
+func NewNodeWithAllEmptyLeaf(index int) SMTNode {
+	return NodeWithAllEmptyLeaf{Index: index}
+}
+func (node NodeWithAllEmptyLeaf) GetHash(tree *SMT) []byte {
+	return tree.CachedAllLevelsHashOfEmptyLeaves[node.Index]
+}
+
+func (node NodeWithAllEmptyLeaf) GetLeftHashHex(tree *SMT) string {
+	return tree.CachedAllLevelsHashHexOfEmptyLeaves[node.Index+1]
+}
+
+func (node NodeWithAllEmptyLeaf) GetRightHashHex(tree *SMT) string {
+	return tree.CachedAllLevelsHashHexOfEmptyLeaves[node.Index+1]
+}
+
+func (self SMT) Generate(blocks [][]byte, hashf hash.Hash) error {
 	return self.GenerateByTwoHashFunc(blocks, hashf, hashf)
 }
 
@@ -77,19 +120,19 @@ func emptyNodeHash(h hash.Hash) ([]byte, error) {
 
 // Generates the tree nodes by using different hash funtions between internal and leaf node
 func (self *SMT) GenerateByTwoHashFunc(blocks [][]byte, leafHash hash.Hash, nonLeafHash hash.Hash) error {
-  if !isPowerOfTwo(uint64(len(blocks))) {
+	if !isPowerOfTwo(uint64(len(blocks))) {
 		return errors.New("Leaves number of SMT tree should be power of 2")
 	}
-  root, err := self.GenerateSMT(0, len(blocks)-1, blocks, leafHash, nonLeafHash)
-  fmt.Printf("root is    %v\n\n", root)
-  if err == nil {
-    self.Root = root
-  }
+	root, err := self.GenerateSMT(0, len(blocks)-1, blocks, leafHash, nonLeafHash)
+	fmt.Printf("root is    %v\n\n", root)
+	if err == nil {
+		self.Root = root
+	}
 	return err
 }
 
 func (self *SMT) GetRoot() []byte {
-  return self.Root
+	return self.Root
 }
 
 func computeHashByTwoItems(item1 []byte, item2 []byte, hash hash.Hash) ([]byte, error) {
@@ -101,12 +144,12 @@ func computeHashByTwoItems(item1 []byte, item2 []byte, hash hash.Hash) ([]byte, 
 	_, err := hash.Write(combinedItem[:])
 	if err != nil {
 		return []byte{}, err
-  }
+	}
 	return hash.Sum(nil), nil
 }
 
 func (self *SMT) computeHashOfOneItem(item []byte, hash hash.Hash) ([]byte, error) {
-  defer hash.Reset()
+	defer hash.Reset()
 	if bytes.Compare(item, []byte{}) == 0 {
 		var result []byte
 		var err error
@@ -133,23 +176,27 @@ func (self *SMT) ComputeEmptyLeavesSubTreeHash(leavesNumber int, leafHash hash.H
 	if 2 == leavesNumber {
 		var hash []byte
 		var err error
-		if self.EmptyLeafHash != nil && !bytes.Equal(self.EmptyLeafHash, []byte{}){
-      hash = self.EmptyLeafHash
+		if self.EmptyLeafHash != nil && !bytes.Equal(self.EmptyLeafHash, []byte{}) {
+			hash = self.EmptyLeafHash
 		} else {
-      hash, err = emptyNodeHash(leafHash)
+			hash, err = emptyNodeHash(leafHash)
 			if err != nil {
 				return []byte{}, err
 			}
 			self.EmptyLeafHash = hash
-    }
+		}
 		if self.CachedAllLevelsHashOfEmptyLeaves != nil && len(self.CachedAllLevelsHashOfEmptyLeaves) > 0 {
-      hash = self.CachedAllLevelsHashOfEmptyLeaves[0]
+			hash = self.CachedAllLevelsHashOfEmptyLeaves[0]
 		} else {
-      hash, err = computeHashByTwoItems(hash, hash, nonLeafHash)
+			hash, err = computeHashByTwoItems(hash, hash, nonLeafHash)
 			if err != nil {
 				return []byte{}, err
-      }
-      self.CachedAllLevelsHashOfEmptyLeaves = append(self.CachedAllLevelsHashOfEmptyLeaves, hash)
+			}
+			self.CachedAllLevelsHashOfEmptyLeaves = append(self.CachedAllLevelsHashOfEmptyLeaves, hash)
+			self.CachedLevels = self.CachedLevels + 1
+			hashHex := fmt.Sprintf("%x", hash)
+			self.Nodes[hashHex] = NewNodeWithAllEmptyLeaf(len(self.CachedAllLevelsHashOfEmptyLeaves))
+			self.CachedAllLevelsHashHexOfEmptyLeaves = append(self.CachedAllLevelsHashHexOfEmptyLeaves, hashHex)
 		}
 		return hash, nil
 	}
@@ -163,30 +210,45 @@ func (self *SMT) ComputeEmptyLeavesSubTreeHash(leavesNumber int, leafHash hash.H
 	if err != nil {
 		return []byte{}, nil
 	}
-  combinedHash, err := computeHashByTwoItems(nextLevelHash, nextLevelHash, nonLeafHash)
+	combinedHash, err := computeHashByTwoItems(nextLevelHash, nextLevelHash, nonLeafHash)
+	if err != nil {
+		return []byte{}, nil
+	}
 	self.CachedAllLevelsHashOfEmptyLeaves = append(self.CachedAllLevelsHashOfEmptyLeaves, combinedHash)
+	self.CachedLevels = self.CachedLevels + 1
+	hashHex := fmt.Sprintf("%x", combinedHash)
+	self.Nodes[hashHex] = NewNodeWithAllEmptyLeaf(len(self.CachedAllLevelsHashOfEmptyLeaves))
+	self.CachedAllLevelsHashHexOfEmptyLeaves = append(self.CachedAllLevelsHashHexOfEmptyLeaves, hashHex)
 
 	return combinedHash, nil
 }
 
 func (self *SMT) GenerateSMT(start int, end int, blocks [][]byte, leafHash hash.Hash, nonLeafHash hash.Hash) ([]byte, error) {
-  //fmt.Println("here called")
+	//fmt.Println("here called")
 	totalEle := (end - start) + 1
 
-  if bytes.Compare(blocks[start], []byte{}) == 0 {
+	if bytes.Compare(blocks[start], []byte{}) == 0 {
 		return self.ComputeEmptyLeavesSubTreeHash(totalEle, leafHash, nonLeafHash)
 	}
 
 	if totalEle == 2 {
-  	left, err := self.computeHashOfOneItem(blocks[start], leafHash)
+		left, err := self.computeHashOfOneItem(blocks[start], leafHash)
 		if err != nil {
 			return []byte{}, nil
 		}
-    right, err := self.computeHashOfOneItem(blocks[start+1], leafHash)
-    if err != nil {
+		right, err := self.computeHashOfOneItem(blocks[start+1], leafHash)
+		if err != nil {
 			return []byte{}, nil
-    }
-  	return computeHashByTwoItems(left, right, nonLeafHash)
+		}
+		hash, err := computeHashByTwoItems(left, right, nonLeafHash)
+		if err != nil {
+			return []byte{}, nil
+		}
+		leftHashHex := fmt.Sprintf("%x", left)
+		rightHashHex := fmt.Sprintf("%x", right)
+		hashHex := fmt.Sprintf("%x", hash)
+		self.Nodes[hashHex] = NewNodeWithAtLeastOneNonEmptyLeafInLeftChild(hash, leftHashHex, rightHashHex)
+		return hash, err
 	}
 
 	leftStart := start
@@ -194,12 +256,12 @@ func (self *SMT) GenerateSMT(start int, end int, blocks [][]byte, leafHash hash.
 	rightStart := leftEnd + 1
 	rightEnd := end
 
-  var rightHash []byte
-  var err error
+	var rightHash []byte
+	var err error
 	if bytes.Compare(blocks[rightStart], []byte{}) == 0 {
-    rightHash, err = self.ComputeEmptyLeavesSubTreeHash(rightEnd-rightStart+1, leafHash, nonLeafHash)
+		rightHash, err = self.ComputeEmptyLeavesSubTreeHash(rightEnd-rightStart+1, leafHash, nonLeafHash)
 	} else {
-    rightHash, err = self.GenerateSMT(rightStart, rightEnd, blocks, leafHash, nonLeafHash)
+		rightHash, err = self.GenerateSMT(rightStart, rightEnd, blocks, leafHash, nonLeafHash)
 	}
 	if err != nil {
 		return []byte{}, err
@@ -208,7 +270,16 @@ func (self *SMT) GenerateSMT(start int, end int, blocks [][]byte, leafHash hash.
 	leftHash, err := self.GenerateSMT(leftStart, leftEnd, blocks, leafHash, nonLeafHash)
 	if err != nil {
 		return []byte{}, err
-  }
-	return computeHashByTwoItems(leftHash, rightHash, nonLeafHash)
+	}
+
+	hash, err := computeHashByTwoItems(leftHash, rightHash, nonLeafHash)
+	if err != nil {
+		return []byte{}, nil
+	}
+	leftHashHex := fmt.Sprintf("%x", leftHash)
+	rightHashHex := fmt.Sprintf("%x", rightHash)
+	hashHex := fmt.Sprintf("%x", hash)
+	self.Nodes[hashHex] = NewNodeWithAtLeastOneNonEmptyLeafInLeftChild(hash, leftHashHex, rightHashHex)
+	return hash, err
 
 }
