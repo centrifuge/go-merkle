@@ -20,9 +20,8 @@ type SMT struct {
 	NonLeafHash   hash.Hash
 	EmptyLeafHash []byte
 
-	CachedAllLevelsHashOfEmptyLeaves    [][]byte
-	CachedAllLevelsHashHexOfEmptyLeaves []string
-	CachedLevels                        int
+	cachedAllLevelsHashOfEmptyLeaves    [][]byte
+	cachedAllLevelsHashHexOfEmptyLeaves []string
 }
 
 func NewSMTWithTwoHashFuncs(leafHash hash.Hash, nonLeafHash hash.Hash) (SMT, error) {
@@ -38,7 +37,7 @@ func NewSMTWithNonLeafHashAndEmptyLeafHashValue(emptyLeafHash []byte, nonLeafHas
 }
 
 func newSMT(leafHash hash.Hash, nonLeafHash hash.Hash, emptyLeafHash []byte) (SMT, error) {
-	return SMT{Nodes: map[string]SMTNode{}, CachedAllLevelsHashOfEmptyLeaves: [][]byte{}, CachedAllLevelsHashHexOfEmptyLeaves: []string{}, EmptyLeafHash: emptyLeafHash, LeafHash: leafHash, NonLeafHash: nonLeafHash}, nil
+	return SMT{Nodes: map[string]SMTNode{}, cachedAllLevelsHashOfEmptyLeaves: [][]byte{}, cachedAllLevelsHashHexOfEmptyLeaves: []string{}, EmptyLeafHash: emptyLeafHash, LeafHash: leafHash, NonLeafHash: nonLeafHash}, nil
 }
 
 type SMTNode interface {
@@ -97,15 +96,15 @@ func NewNodeWithAllEmptyLeaf(index int) SMTNode {
 	return NodeWithAllEmptyLeaf{Index: index}
 }
 func (node NodeWithAllEmptyLeaf) GetHash(tree *SMT) []byte {
-	return tree.CachedAllLevelsHashOfEmptyLeaves[node.Index]
+	return tree.cachedAllLevelsHashOfEmptyLeaves[node.Index]
 }
 
 func (node NodeWithAllEmptyLeaf) GetLeftHashHex(tree *SMT) string {
-	return tree.CachedAllLevelsHashHexOfEmptyLeaves[node.Index+1]
+	return tree.cachedAllLevelsHashHexOfEmptyLeaves[node.Index+1]
 }
 
 func (node NodeWithAllEmptyLeaf) GetRightHashHex(tree *SMT) string {
-	return tree.CachedAllLevelsHashHexOfEmptyLeaves[node.Index+1]
+	return tree.cachedAllLevelsHashHexOfEmptyLeaves[node.Index+1]
 }
 
 func emptyLeafHash(h hash.Hash) ([]byte, error) {
@@ -184,11 +183,10 @@ func (self *SMT) leafHash(leaf []byte) ([]byte, error) {
 }
 
 func (self *SMT) addNodeWithAllEmptyLeaf(hash []byte) {
-	self.CachedAllLevelsHashOfEmptyLeaves = append(self.CachedAllLevelsHashOfEmptyLeaves, hash)
-	self.CachedLevels = self.CachedLevels + 1
+	self.cachedAllLevelsHashOfEmptyLeaves = append(self.cachedAllLevelsHashOfEmptyLeaves, hash)
 	hashHex := fmt.Sprintf("%x", hash)
-	self.Nodes[hashHex] = NewNodeWithAllEmptyLeaf(len(self.CachedAllLevelsHashOfEmptyLeaves))
-	self.CachedAllLevelsHashHexOfEmptyLeaves = append(self.CachedAllLevelsHashHexOfEmptyLeaves, hashHex)
+	self.Nodes[hashHex] = NewNodeWithAllEmptyLeaf(len(self.cachedAllLevelsHashOfEmptyLeaves))
+	self.cachedAllLevelsHashHexOfEmptyLeaves = append(self.cachedAllLevelsHashHexOfEmptyLeaves, hashHex)
 }
 
 func (self *SMT) ComputeEmptyLeavesSubTreeHash(leavesNumber int) ([]byte, error) {
@@ -196,8 +194,8 @@ func (self *SMT) ComputeEmptyLeavesSubTreeHash(leavesNumber int) ([]byte, error)
 		hash := self.EmptyLeafHash
 		var err error
 
-		if self.CachedAllLevelsHashOfEmptyLeaves != nil && len(self.CachedAllLevelsHashOfEmptyLeaves) > 0 {
-			hash = self.CachedAllLevelsHashOfEmptyLeaves[0]
+		if self.cachedAllLevelsHashOfEmptyLeaves != nil && len(self.cachedAllLevelsHashOfEmptyLeaves) > 0 {
+			hash = self.cachedAllLevelsHashOfEmptyLeaves[0]
 		} else {
 			hash, err = self.parentHash(hash, hash)
 			if err != nil {
@@ -209,8 +207,8 @@ func (self *SMT) ComputeEmptyLeavesSubTreeHash(leavesNumber int) ([]byte, error)
 	}
 
 	levels := logBaseTwo(uint64(leavesNumber)) - 1
-	if self.CachedAllLevelsHashOfEmptyLeaves != nil && uint64(len(self.CachedAllLevelsHashOfEmptyLeaves)) > levels {
-		return self.CachedAllLevelsHashOfEmptyLeaves[levels], nil
+	if self.cachedAllLevelsHashOfEmptyLeaves != nil && uint64(len(self.cachedAllLevelsHashOfEmptyLeaves)) > levels {
+		return self.cachedAllLevelsHashOfEmptyLeaves[levels], nil
 	}
 
 	nextLevelHash, err := self.ComputeEmptyLeavesSubTreeHash(leavesNumber / 2)
