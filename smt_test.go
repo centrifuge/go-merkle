@@ -1,9 +1,7 @@
 package merkle
 
 import (
-	"bytes"
 	"crypto/md5"
-	//"fmt"
 	"github.com/stretchr/testify/assert"
 	"hash"
 	"testing"
@@ -82,7 +80,7 @@ func TestCacheFullEmptyLeaves(t *testing.T) {
 	assert.Equal(t, 1, leafHashCount)
 
 	expectedRoot := []byte{211, 106, 3, 253, 238, 164, 19, 12, 143, 166, 236, 114, 118, 192, 223, 97}
-	assert.Equal(t, bytes.Equal(tree.GetRoot(), expectedRoot), true)
+	assert.Equal(t, expectedRoot, tree.Root)
 
 	assert.Equal(t, 4, len(tree.Nodes))
 }
@@ -153,7 +151,7 @@ func TestCacheWithoutEmptyLeaves(t *testing.T) {
 	assert.Equal(t, 8+4+2+1, nonLeafHashCount)
 	assert.Equal(t, 16+1, leafHashCount)
 	expectedRoot := []byte{128, 114, 175, 140, 59, 253, 14, 136, 26, 157, 15, 64, 61, 36, 68, 36}
-	assert.Equal(t, bytes.Equal(tree.GetRoot(), expectedRoot), true)
+	assert.Equal(t, expectedRoot, tree.Root)
 	assert.Equal(t, 15+16, len(tree.Nodes))
 }
 
