@@ -51,8 +51,10 @@ func TestBigFullEmptyLeavesCache(t *testing.T) {
 	hash := md5.New()
 	decoratedLeafHash := NewHashCountDecorator(hash, &leafHashCount)
 	decoratedNonLeafHash := NewHashCountDecorator(hash, &nonLeafHashCount)
-	tree := NewSMT()
-	err := tree.GenerateByTwoHashFunc(items, decoratedLeafHash, decoratedNonLeafHash)
+
+	tree, err := NewSMTWithTwoHashFuncs(decoratedLeafHash, decoratedNonLeafHash)
+	assert.Nil(t, err)
+	err = tree.GenerateByTwoHashFunc(items)
 	assert.Nil(t, err)
 
 	assert.Equal(t, 20, nonLeafHashCount)
@@ -70,8 +72,9 @@ func TestCacheFullEmptyLeaves(t *testing.T) {
 	hash := md5.New()
 	decoratedLeafHash := NewHashCountDecorator(hash, &leafHashCount)
 	decoratedNonLeafHash := NewHashCountDecorator(hash, &nonLeafHashCount)
-	tree := NewSMT()
-	err := tree.GenerateByTwoHashFunc(items, decoratedLeafHash, decoratedNonLeafHash)
+	tree, err := NewSMTWithTwoHashFuncs(decoratedLeafHash, decoratedNonLeafHash)
+	assert.Nil(t, err)
+	err = tree.GenerateByTwoHashFunc(items)
 	assert.Nil(t, err)
 	//four levels
 	assert.Equal(t, 4, nonLeafHashCount)
@@ -93,8 +96,9 @@ func TestCacheWithSomeEmptyLeaves(t *testing.T) {
 	hash := md5.New()
 	decoratedLeafHash := NewHashCountDecorator(hash, &leafHashCount)
 	decoratedNonLeafHash := NewHashCountDecorator(hash, &nonLeafHashCount)
-	tree := NewSMT()
-	err := tree.GenerateByTwoHashFunc(items, decoratedLeafHash, decoratedNonLeafHash)
+	tree, err := NewSMTWithTwoHashFuncs(decoratedLeafHash, decoratedNonLeafHash)
+	assert.Nil(t, err)
+	err = tree.GenerateByTwoHashFunc(items)
 	assert.Nil(t, err)
 
 	assert.Equal(t, 3+2+2+1, nonLeafHashCount)
@@ -115,8 +119,9 @@ func TestCacheWithoutEmptyLeaves(t *testing.T) {
 	hash := md5.New()
 	decoratedLeafHash := NewHashCountDecorator(hash, &leafHashCount)
 	decoratedNonLeafHash := NewHashCountDecorator(hash, &nonLeafHashCount)
-	tree := NewSMT()
-	err := tree.GenerateByTwoHashFunc(items, decoratedLeafHash, decoratedNonLeafHash)
+	tree, err := NewSMTWithTwoHashFuncs(decoratedLeafHash, decoratedNonLeafHash)
+	assert.Nil(t, err)
+	err = tree.GenerateByTwoHashFunc(items)
 	assert.Nil(t, err)
 
 	assert.Equal(t, 8+4+2+1, nonLeafHashCount)
@@ -128,10 +133,10 @@ func TestCacheWithoutEmptyLeaves(t *testing.T) {
 
 func TestCacheWithoutLeafHashFunc(t *testing.T) {
 
-	leafHashCount := 0
+	//leafHashCount := 0
 	nonLeafHashCount := 0
 	hash := md5.New()
-	decoratedLeafHash := NewHashCountDecorator(hash, &leafHashCount)
+	//decoratedLeafHash := NewHashCountDecorator(hash, &leafHashCount)
 	decoratedNonLeafHash := NewHashCountDecorator(hash, &nonLeafHashCount)
 
 	emptyLeafHash, err := emptyLeafHash(hash)
@@ -140,12 +145,13 @@ func TestCacheWithoutLeafHashFunc(t *testing.T) {
 	//13 empty leaves
 	items := [][]byte{[]byte("alpha1"), []byte("alpha2"), []byte("alpha3"), emptyLeafHash, emptyLeafHash, emptyLeafHash, emptyLeafHash, emptyLeafHash, emptyLeafHash, emptyLeafHash, emptyLeafHash, emptyLeafHash, emptyLeafHash, emptyLeafHash, emptyLeafHash, emptyLeafHash}
 
-	tree := NewSMTWithOpts(SMTOptions{DisableHashLeaves: true})
-	err = tree.GenerateByTwoHashFunc(items, decoratedLeafHash, decoratedNonLeafHash)
+	tree, err := NewSMTWithNonLeafHashAndEmptyLeafHashValue(emptyLeafHash, decoratedNonLeafHash)
+	assert.Nil(t, err)
+	err = tree.GenerateByTwoHashFunc(items)
 	assert.Nil(t, err)
 
 	assert.Equal(t, 3+2+2+1, nonLeafHashCount)
-	assert.Equal(t, 1, leafHashCount)
+	//assert.Equal(t, 0, leafHashCount)
 	//	expectedRoot := []byte{128, 114, 175, 140, 59, 253, 14, 136, 26, 157, 15, 64, 61, 36, 68, 36}
 	//	assert.Equal(t, bytes.Equal(tree.GetRoot(), expectedRoot), true)
 	fmt.Printf("Nodes %v\n", tree.Nodes)
