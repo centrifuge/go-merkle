@@ -1,3 +1,8 @@
+/* Copyright 2019 Kevin Zhang <kevin.zhang0125@gmail.com>, Lucas Vogelsang <lucas@centrifuge.io>. All rights reserved.
+Use of this source code is governed by the MIT license that can be found
+in the LICENSE file.
+*/
+
 package merkle
 
 import (
@@ -12,7 +17,7 @@ type ProofNode struct {
 	Left bool
 }
 
-// A Sparse Merkle Tree which support all empty leaves lies in
+// A Sparse Merkle Tree which support all empty leaves lies in right
 type SMT struct {
 	fullNodes             [][]Hash
 	hashFunc              hash.Hash
@@ -72,6 +77,7 @@ func (self *SMT) Generate(leaves [][]byte, totalSize uint64) error {
 	return nil
 }
 
+// Leaf mumber begins with 0
 func (self *SMT) GetMerkleProof(leafNo uint) ([]ProofNode, error) {
 	if !self.filled {
 		return nil, errors.New("SMT tree is not filled")
@@ -88,7 +94,7 @@ func (self *SMT) GetMerkleProof(leafNo uint) ([]ProofNode, error) {
 	return proofs, nil
 }
 
-//Following are non public function
+// Following are non public function
 
 func (self *SMT) computeEmptyLeavesSubTreeHash(maxHeight int) error {
 	lastLevelHash := self.emptyHash

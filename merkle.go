@@ -19,7 +19,7 @@ type TreeOptions struct {
 	// simplifies the proof format by removing the need to specify left/right.
 	EnableHashSorting bool
 
-	// DisableHashLeaves determines whether leaf nodes should be hashed or not. By doing disabling this behavior,
+	// DisableHashLeaves determines whether leaf nodes should be hashed or not. By disabling this behavior,
 	// you can use a different hash function for leaves or generate a tree that contains already hashed
 	// values.
 	DisableHashLeaves bool
