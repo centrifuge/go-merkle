@@ -12,6 +12,7 @@ type ProofNode struct {
 	Left bool
 }
 
+// A Sparse Merkle Tree which support all empty leaves lies in right
 type SMT struct {
 	nodesWithoutEmptyLeavesSubTree [][]Hash
 	leafHashFunc                   hash.Hash
