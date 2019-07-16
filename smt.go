@@ -8,10 +8,15 @@ import (
 
 type Hash []byte
 
+type ProofNode struct {
+	Hash []byte
+	Left bool
+}
+
 type SMT struct {
 	nodesWithoutEmptyLeavesSubTree [][]Hash
-	leafHash                       hash.Hash
-	nonLeafHash                    hash.Hash
+	leafHashFunc                   hash.Hash
+	nonLeafHashFunc                hash.Hash
 	emptyLeafHash                  []byte
 
 	levelsUpHashOfEmptyLeaves []Hash
@@ -19,16 +24,16 @@ type SMT struct {
 	noOfNonEmptyLeaves        int
 }
 
-func NewSMTWithTwoHashFuncs(leafHash hash.Hash, nonLeafHash hash.Hash) (SMT, error) {
-	emptyLeafHash, err := emptyLeafHash(leafHash)
+func NewSMTWithTwoHashFuncs(leafHashFunc hash.Hash, nonLeafHashFunc hash.Hash) (SMT, error) {
+	emptyLeafHash, err := emptyLeafHash(leafHashFunc)
 	if err != nil {
 		return SMT{}, err
 	}
-	return newSMT(leafHash, nonLeafHash, emptyLeafHash)
+	return newSMT(leafHashFunc, nonLeafHashFunc, emptyLeafHash)
 }
 
-func NewSMTWithNonLeafHashAndEmptyLeafHashValue(emptyLeafHash []byte, nonLeafHash hash.Hash) (SMT, error) {
-	return newSMT(nil, nonLeafHash, emptyLeafHash)
+func NewSMTWithNonLeafHashAndEmptyLeafHashValue(emptyLeafHash []byte, nonLeafHashFunc hash.Hash) (SMT, error) {
+	return newSMT(nil, nonLeafHashFunc, emptyLeafHash)
 }
 
 func (self *SMT) RootHash() []byte {
@@ -38,19 +43,50 @@ func (self *SMT) RootHash() []byte {
 	return self.nodesWithoutEmptyLeavesSubTree[self.treeHeight-1][0]
 }
 
-func (self *SMT) buildLeavesNodes(nonEmptyLeaves [][]byte) error {
-	hashes := []Hash{}
-	counts := len(nonEmptyLeaves)
-	for i := 0; i < counts; i++ {
-		hash, err := self.leafHashFunc(nonEmptyLeaves[i])
+func (self *SMT) Generate(nonEmptyLeaves [][]byte, totalSize uint64) error {
+	if !isPowerOfTwo(totalSize) {
+		return errors.New("Leaves number of SMT tree should be power of 2")
+	}
+	if uint64(len(nonEmptyLeaves)) > totalSize {
+		return errors.New("NonEmptyLeaves is bigger than totalSize ")
+	}
+	self.treeHeight = uint(logBaseTwo(totalSize) + 1)
+	self.noOfNonEmptyLeaves = len(nonEmptyLeaves)
+	noOfEmtpyLeaves := totalSize - uint64(len(nonEmptyLeaves))
+
+	maxEmtySubTreeHeight := 0
+	for i := noOfEmtpyLeaves; i > 0; i = i >> 1 {
+		maxEmtySubTreeHeight++
+	}
+	err := self.computeEmptyLeavesSubTreeHash(maxEmtySubTreeHeight)
+	if err != nil {
+		return err
+	}
+	return self.buildAllLevelNodes(nonEmptyLeaves)
+}
+
+func (self *SMT) GetMerkelProof(leafNo uint) []ProofNode {
+	proofs := []ProofNode{}
+	level := int(self.treeHeight - 1)
+	index := leafNo
+	for i := level; i > 0; i-- {
+		proofNode := self.proofNodeAt(int(index), int(i))
+		proofs = append(proofs, proofNode)
+		index = index / 2
+	}
+	return proofs
+}
+
+func (self *SMT) computeEmptyLeavesSubTreeHash(maxHeight int) error {
+	lastLevelHash := self.emptyLeafHash
+	var err error
+	for i := 1; i < maxHeight; i++ {
+		lastLevelHash, err = self.parentHash(lastLevelHash, lastLevelHash)
 		if err != nil {
 			return err
 		}
-		hashes = append(hashes, hash)
+		self.levelsUpHashOfEmptyLeaves = append(self.levelsUpHashOfEmptyLeaves, lastLevelHash)
 	}
-
-	self.nodesWithoutEmptyLeavesSubTree = append(self.nodesWithoutEmptyLeavesSubTree, hashes)
-
 	return nil
 }
 
@@ -65,6 +101,22 @@ func (self *SMT) buildAllLevelNodes(nonEmptyLeaves [][]byte) error {
 			return err
 		}
 	}
+	return nil
+}
+
+func (self *SMT) buildLeavesNodes(nonEmptyLeaves [][]byte) error {
+	hashes := []Hash{}
+	counts := len(nonEmptyLeaves)
+	for i := 0; i < counts; i++ {
+		hash, err := self.leafHash(nonEmptyLeaves[i])
+		if err != nil {
+			return err
+		}
+		hashes = append(hashes, hash)
+	}
+
+	self.nodesWithoutEmptyLeavesSubTree = append(self.nodesWithoutEmptyLeavesSubTree, hashes)
+
 	return nil
 }
 
@@ -91,33 +143,6 @@ func (self *SMT) buildInternalOneLevelNodes(levelsNo uint) error {
 	return nil
 }
 
-func (self *SMT) Generate(nonEmptyLeaves [][]byte, totalSize uint64) error {
-	if !isPowerOfTwo(totalSize) {
-		return errors.New("Leaves number of SMT tree should be power of 2")
-	}
-	if uint64(len(nonEmptyLeaves)) > totalSize {
-		return errors.New("NonEmptyLeaves is bigger than totalSize ")
-	}
-	self.treeHeight = uint(logBaseTwo(totalSize) + 1)
-	self.noOfNonEmptyLeaves = len(nonEmptyLeaves)
-	noOfEmtpyLeaves := totalSize - uint64(len(nonEmptyLeaves))
-
-	maxEmtySubTreeHeight := 0
-	for i := noOfEmtpyLeaves; i > 0; i = i >> 1 {
-		maxEmtySubTreeHeight++
-	}
-	err := self.computeEmptyLeavesSubTreeHash(maxEmtySubTreeHeight)
-	if err != nil {
-		return err
-	}
-	return self.buildAllLevelNodes(nonEmptyLeaves)
-}
-
-type ProofNode struct {
-	Hash []byte
-	Left bool
-}
-
 func (self *SMT) proofNodeAt(index int, level int) ProofNode {
 	hashes := self.nodesWithoutEmptyLeavesSubTree[int(self.treeHeight)-level-1]
 	var hash Hash
@@ -139,50 +164,25 @@ func (self *SMT) proofNodeAt(index int, level int) ProofNode {
 	return ProofNode{Hash: hash, Left: left}
 }
 
-func (self *SMT) GetMerkelProof(leafNo uint) []ProofNode {
-	proofs := []ProofNode{}
-	level := int(self.treeHeight - 1)
-	index := leafNo
-	for i := level; i > 0; i-- {
-		proofNode := self.proofNodeAt(int(index), int(i))
-		proofs = append(proofs, proofNode)
-		index = index / 2
-	}
-	return proofs
-}
-
-func newSMT(leafHash hash.Hash, nonLeafHash hash.Hash, emptyLeafHash []byte) (SMT, error) {
-	smt := SMT{nodesWithoutEmptyLeavesSubTree: [][]Hash{}, levelsUpHashOfEmptyLeaves: []Hash{emptyLeafHash}, emptyLeafHash: emptyLeafHash, leafHash: leafHash, nonLeafHash: nonLeafHash}
+func newSMT(leafHashFunc hash.Hash, nonLeafHashFunc hash.Hash, emptyLeafHash []byte) (SMT, error) {
+	smt := SMT{nodesWithoutEmptyLeavesSubTree: [][]Hash{}, levelsUpHashOfEmptyLeaves: []Hash{emptyLeafHash}, emptyLeafHash: emptyLeafHash, leafHashFunc: leafHashFunc, nonLeafHashFunc: nonLeafHashFunc}
 	return smt, nil
 }
 
-func (self *SMT) computeEmptyLeavesSubTreeHash(maxHeight int) error {
-	lastLevelHash := self.emptyLeafHash
-	var err error
-	for i := 1; i < maxHeight; i++ {
-		lastLevelHash, err = self.parentHash(lastLevelHash, lastLevelHash)
-		if err != nil {
-			return err
-		}
-		self.levelsUpHashOfEmptyLeaves = append(self.levelsUpHashOfEmptyLeaves, lastLevelHash)
-	}
-	return nil
-}
-
 func (self *SMT) isEmptyLeaf(item []byte) bool {
-	if self.leafHash == nil {
+	if self.leafHashFunc == nil {
 		return bytes.Equal(item, self.emptyLeafHash)
 	} else {
 		return bytes.Equal(item, []byte{})
 	}
 }
 
-func (self *SMT) leafHashFunc(leaf []byte) ([]byte, error) {
-	if self.leafHash == nil {
+func (self *SMT) leafHash(leaf []byte) ([]byte, error) {
+	if self.leafHashFunc == nil {
 		return leaf, nil
 	}
 
-	leafHashFunc := self.leafHash
+	leafHashFunc := self.leafHashFunc
 	defer leafHashFunc.Reset()
 
 	_, err := leafHashFunc.Write(leaf[:])
@@ -194,7 +194,7 @@ func (self *SMT) leafHashFunc(leaf []byte) ([]byte, error) {
 }
 
 func (self *SMT) parentHash(item1 []byte, item2 []byte) ([]byte, error) {
-	hash := self.nonLeafHash
+	hash := self.nonLeafHashFunc
 	defer hash.Reset()
 
 	_, err := hash.Write(item1)
