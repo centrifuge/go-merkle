@@ -20,17 +20,21 @@ type SMT struct {
 	emptyTreeRootHash     []Hash
 	treeHeight            uint
 	countOfNonEmptyLeaves int
+	filled                bool
 }
 
 func NewSMT(emptyHash []byte, hashFunc hash.Hash) SMT {
 	return SMT{fullNodes: [][]Hash{}, emptyTreeRootHash: []Hash{emptyHash}, emptyHash: emptyHash, hashFunc: hashFunc}
 }
 
-func (self *SMT) RootHash() []byte {
-	if self.countOfNonEmptyLeaves == 0 {
-		return self.emptyTreeRootHash[len(self.emptyTreeRootHash)-1]
+func (self *SMT) RootHash() ([]byte, error) {
+	if !self.filled {
+		return nil, errors.New("SMT tree is not filled")
 	}
-	return self.fullNodes[self.treeHeight-1][0]
+	if self.countOfNonEmptyLeaves == 0 {
+		return self.emptyTreeRootHash[len(self.emptyTreeRootHash)-1], nil
+	}
+	return self.fullNodes[self.treeHeight-1][0], nil
 }
 
 func (self *SMT) Generate(leaves [][]byte, totalSize uint64) error {
@@ -39,7 +43,7 @@ func (self *SMT) Generate(leaves [][]byte, totalSize uint64) error {
 	}
 	count := len(leaves)
 	if uint64(count) > totalSize {
-		return errors.New("NonEmptyLeaves is bigger than totalSize ")
+		return errors.New("NonEmptyLeaves is bigger than totalSize")
 	}
 	self.treeHeight = uint(logBaseTwo(totalSize) + 1)
 	self.countOfNonEmptyLeaves = len(leaves)
@@ -60,10 +64,19 @@ func (self *SMT) Generate(leaves [][]byte, totalSize uint64) error {
 	}
 	self.fullNodes = append(self.fullNodes, hashes)
 
-	return self.computeAllLevelNodes(leaves)
+	err = self.computeAllLevelNodes(leaves)
+	if err != nil {
+		return err
+	}
+	self.filled = true
+	return nil
 }
 
-func (self *SMT) GetMerkleProof(leafNo uint) []ProofNode {
+func (self *SMT) GetMerkleProof(leafNo uint) ([]ProofNode, error) {
+	if !self.filled {
+		return nil, errors.New("SMT tree is not filled")
+	}
+
 	proofs := []ProofNode{}
 	level := int(self.treeHeight - 1)
 	index := leafNo
@@ -72,7 +85,7 @@ func (self *SMT) GetMerkleProof(leafNo uint) []ProofNode {
 		proofs = append(proofs, proofNode)
 		index = index / 2
 	}
-	return proofs
+	return proofs, nil
 }
 
 //Following are non public function

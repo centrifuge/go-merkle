@@ -62,9 +62,30 @@ func totalHashes(nodes [][]Hash) int {
 var testHashes = [][]byte{hashValue([]byte("alpha0"), hashFunc), hashValue([]byte("alpha1"), hashFunc), hashValue([]byte("alpha2"), hashFunc), hashValue([]byte("alpha3"), hashFunc), hashValue([]byte("alpha4"), hashFunc), hashValue([]byte("alpha5"), hashFunc), hashValue([]byte("alpha6"), hashFunc), hashValue([]byte("alpha7"), hashFunc), hashValue([]byte("alpha8"), hashFunc), hashValue([]byte("alpha9"), hashFunc), hashValue([]byte("alpha10"), hashFunc), hashValue([]byte("alpha11"), hashFunc), hashValue([]byte("alpha12"), hashFunc), hashValue([]byte("alpha13"), hashFunc), hashValue([]byte("alpha14"), hashFunc), hashValue([]byte("alpha15"), hashFunc)}
 var emptyHash = emptyHashFunc(hashFunc)
 
+func TestInvalidArgument(t *testing.T) {
+	hash := hashFunc
+	tree := NewSMT(emptyHash, hash)
+	err := tree.Generate(testHashes, 31)
+	assert.Equal(t, err.Error(), "Leaves number of SMT tree should be power of 2")
+
+	tree = NewSMT(emptyHash, hash)
+	err = tree.Generate(testHashes, 8)
+	assert.Equal(t, err.Error(), "NonEmptyLeaves is bigger than totalSize")
+
+}
+
+func TestSMTNotFilled(t *testing.T) {
+	hash := hashFunc
+	tree := NewSMT(emptyHash, hash)
+	_, err := tree.RootHash()
+	assert.Equal(t, err.Error(), "SMT tree is not filled")
+	_, err = tree.GetMerkleProof(1)
+	assert.Equal(t, err.Error(), "SMT tree is not filled")
+}
+
 func TestBigFullEmptyLeavesCache(t *testing.T) {
 	hashCount := 0
-	hash := md5.New()
+	hash := hashFunc
 	decoratedHash := NewHashCountDecorator(hash, &hashCount)
 	tree := NewSMT(emptyHash, decoratedHash)
 
@@ -87,7 +108,8 @@ func TestCacheFullEmptyLeaves(t *testing.T) {
 	assert.Equal(t, 4, hashCount)
 
 	expectedRoot := []byte{211, 106, 3, 253, 238, 164, 19, 12, 143, 166, 236, 114, 118, 192, 223, 97}
-	assert.Equal(t, expectedRoot, tree.RootHash())
+	rootHash, err := tree.RootHash()
+	assert.Equal(t, expectedRoot, rootHash)
 	assert.Equal(t, 0, totalHashes(tree.fullNodes))
 }
 
@@ -109,8 +131,8 @@ func TestCacheWithHalveEmptyLeaves(t *testing.T) {
 	hash1 := hash2Value(testHashes[0], testHashes[1], hashFunc)
 	hash2 := hash2Value(emptyHash, emptyHash, hashFunc)
 	expectedRoot := hash2Value(hash1, hash2, hashFunc)
-
-	assert.Equal(t, expectedRoot, tree.RootHash())
+	rootHash, err := tree.RootHash()
+	assert.Equal(t, expectedRoot, rootHash)
 	assert.Equal(t, 2+1+1, totalHashes(tree.fullNodes))
 }
 
@@ -138,8 +160,8 @@ func TestCacheWithSomeEmptyLeaves(t *testing.T) {
 	right := hash2Value(fourEmptyLeafHash, fourEmptyLeafHash, hash)
 
 	expectedRoot := hash2Value(left, right, hash)
-
-	assert.Equal(t, expectedRoot, tree.RootHash())
+	rootHash, err := tree.RootHash()
+	assert.Equal(t, expectedRoot, rootHash)
 	assert.Equal(t, 3+2+1+1+1, totalHashes(tree.fullNodes))
 }
 
@@ -156,7 +178,8 @@ func TestCacheWithoutEmptyLeaves(t *testing.T) {
 
 	assert.Equal(t, 8+4+2+1, hashCount)
 	expectedRoot := []byte{0xac, 0xef, 0x51, 0x94, 0xbc, 0xa5, 0x1e, 0xe8, 0x6a, 0x1a, 0x2a, 0x5, 0xfd, 0x73, 0xa2, 0x3b}
-	assert.Equal(t, expectedRoot, tree.RootHash())
+	rootHash, err := tree.RootHash()
+	assert.Equal(t, expectedRoot, rootHash)
 	assert.Equal(t, 16+8+4+2+1, totalHashes(tree.fullNodes))
 }
 
@@ -169,7 +192,7 @@ func TestGetMerkleProofs(t *testing.T) {
 	assert.Nil(t, err)
 
 	//proof of []byte("alpha3")
-	proof := tree.GetMerkleProof(1)
+	proof, err := tree.GetMerkleProof(1)
 
 	sibleHash := testHashes[0]
 	proofNode := ProofNode{Left: true, Hash: sibleHash}
