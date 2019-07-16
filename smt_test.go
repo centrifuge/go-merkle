@@ -63,7 +63,7 @@ func TestBigFullEmptyLeavesCache(t *testing.T) {
 	assert.Equal(t, 20, nonLeafHashCount)
 	assert.Equal(t, 1, leafHashCount)
 
-	assert.Equal(t, 0, totalHashes(tree.nodesWithoutEmptyLeavesSubTree))
+	assert.Equal(t, 0, totalHashes(tree.fullNodes))
 }
 
 func TestCacheFullEmptyLeaves(t *testing.T) {
@@ -83,7 +83,7 @@ func TestCacheFullEmptyLeaves(t *testing.T) {
 	expectedRoot := []byte{211, 106, 3, 253, 238, 164, 19, 12, 143, 166, 236, 114, 118, 192, 223, 97}
 	assert.Equal(t, expectedRoot, tree.RootHash())
 
-	assert.Equal(t, 0, totalHashes(tree.nodesWithoutEmptyLeavesSubTree))
+	assert.Equal(t, 0, totalHashes(tree.fullNodes))
 }
 
 func TestCacheWithHalveEmptyLeaves(t *testing.T) {
@@ -100,7 +100,7 @@ func TestCacheWithHalveEmptyLeaves(t *testing.T) {
 	expectedRoot := hash2Value(hash1, hash2, hash)
 
 	assert.Equal(t, expectedRoot, tree.RootHash())
-	assert.Equal(t, 2+1+1, totalHashes(tree.nodesWithoutEmptyLeavesSubTree))
+	assert.Equal(t, 2+1+1, totalHashes(tree.fullNodes))
 }
 
 func TestCacheWithSomeEmptyLeaves(t *testing.T) {
@@ -134,7 +134,7 @@ func TestCacheWithSomeEmptyLeaves(t *testing.T) {
 	expectedRoot := hash2Value(left, right, hash)
 
 	assert.Equal(t, expectedRoot, tree.RootHash())
-	assert.Equal(t, 3+2+1+1+1, totalHashes(tree.nodesWithoutEmptyLeavesSubTree))
+	assert.Equal(t, 3+2+1+1+1, totalHashes(tree.fullNodes))
 }
 
 func TestCacheWithoutEmptyLeaves(t *testing.T) {
@@ -154,7 +154,7 @@ func TestCacheWithoutEmptyLeaves(t *testing.T) {
 	assert.Equal(t, 16+1, leafHashCount)
 	expectedRoot := []byte{128, 114, 175, 140, 59, 253, 14, 136, 26, 157, 15, 64, 61, 36, 68, 36}
 	assert.Equal(t, expectedRoot, tree.RootHash())
-	assert.Equal(t, 16+8+4+2+1, totalHashes(tree.nodesWithoutEmptyLeavesSubTree))
+	assert.Equal(t, 16+8+4+2+1, totalHashes(tree.fullNodes))
 }
 
 func TestCacheWithoutLeafHashFunc(t *testing.T) {
@@ -186,7 +186,7 @@ func TestCacheWithoutLeafHashFunc(t *testing.T) {
 	expectedRoot := hash2Value(left, right, hash)
 
 	assert.Equal(t, expectedRoot, tree.RootHash())
-	assert.Equal(t, 3+2+1+1+1, totalHashes(tree.nodesWithoutEmptyLeavesSubTree))
+	assert.Equal(t, 3+2+1+1+1, totalHashes(tree.fullNodes))
 }
 
 func hashValue(item []byte, hash hash.Hash) []byte {
@@ -212,7 +212,7 @@ func TestGetMerkleProofs(t *testing.T) {
 	assert.Nil(t, err)
 
 	//proof of []byte("alpha3")
-	proof := tree.GetMerkelProof(1)
+	proof := tree.GetMerkleProof(1)
 
 	sibleHash := hashValue([]byte("alpha1"), hash)
 	proofNode := ProofNode{Left: true, Hash: sibleHash}

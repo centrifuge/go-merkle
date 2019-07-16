@@ -12,15 +12,15 @@ type ProofNode struct {
 	Left bool
 }
 
-// A Sparse Merkle Tree which support all empty leaves lies in right
+// A Sparse Merkle Tree which support all empty leaves lies in
 type SMT struct {
-	nodesWithoutEmptyLeavesSubTree [][]Hash
-	leafHashFunc                   hash.Hash
-	nonLeafHashFunc                hash.Hash
-	emptyLeafHash                  []byte
-	levelsUpHashOfEmptyLeaves      []Hash
-	treeHeight                     uint
-	noOfNonEmptyLeaves             int
+	fullNodes             [][]Hash
+	leafHashFunc          hash.Hash
+	nonLeafHashFunc       hash.Hash
+	emptyLeafHash         []byte
+	emptyTreeRootHash     []Hash
+	treeHeight            uint
+	countOfNonEmptyLeaves int
 }
 
 func NewSMTWithTwoHashFuncs(leafHashFunc hash.Hash, nonLeafHashFunc hash.Hash) (SMT, error) {
@@ -36,23 +36,23 @@ func NewSMTWithNonLeafHashAndEmptyLeafHashValue(emptyLeafHash []byte, nonLeafHas
 }
 
 func (self *SMT) RootHash() []byte {
-	if self.noOfNonEmptyLeaves == 0 {
-		return self.levelsUpHashOfEmptyLeaves[len(self.levelsUpHashOfEmptyLeaves)-1]
+	if self.countOfNonEmptyLeaves == 0 {
+		return self.emptyTreeRootHash[len(self.emptyTreeRootHash)-1]
 	}
-	return self.nodesWithoutEmptyLeavesSubTree[self.treeHeight-1][0]
+	return self.fullNodes[self.treeHeight-1][0]
 }
 
-func (self *SMT) Generate(nonEmptyLeaves [][]byte, totalSize uint64) error {
+func (self *SMT) Generate(leaves [][]byte, totalSize uint64) error {
 	if !isPowerOfTwo(totalSize) {
 		return errors.New("Leaves number of SMT tree should be power of 2")
 	}
-	if uint64(len(nonEmptyLeaves)) > totalSize {
+	if uint64(len(leaves)) > totalSize {
 		return errors.New("NonEmptyLeaves is bigger than totalSize ")
 	}
 	self.treeHeight = uint(logBaseTwo(totalSize) + 1)
-	self.noOfNonEmptyLeaves = len(nonEmptyLeaves)
+	self.countOfNonEmptyLeaves = len(leaves)
 
-	noOfEmtpyLeaves := totalSize - uint64(len(nonEmptyLeaves))
+	noOfEmtpyLeaves := totalSize - uint64(len(leaves))
 	maxEmtySubTreeHeight := 0
 	for i := noOfEmtpyLeaves; i > 0; i = i >> 1 {
 		maxEmtySubTreeHeight++
@@ -61,10 +61,10 @@ func (self *SMT) Generate(nonEmptyLeaves [][]byte, totalSize uint64) error {
 	if err != nil {
 		return err
 	}
-	return self.buildAllLevelNodes(nonEmptyLeaves)
+	return self.buildAllLevelNodes(leaves)
 }
 
-func (self *SMT) GetMerkelProof(leafNo uint) []ProofNode {
+func (self *SMT) GetMerkleProof(leafNo uint) []ProofNode {
 	proofs := []ProofNode{}
 	level := int(self.treeHeight - 1)
 	index := leafNo
@@ -78,7 +78,7 @@ func (self *SMT) GetMerkelProof(leafNo uint) []ProofNode {
 
 //Following are non public function
 func newSMT(leafHashFunc hash.Hash, nonLeafHashFunc hash.Hash, emptyLeafHash []byte) (SMT, error) {
-	smt := SMT{nodesWithoutEmptyLeavesSubTree: [][]Hash{}, levelsUpHashOfEmptyLeaves: []Hash{emptyLeafHash}, emptyLeafHash: emptyLeafHash, leafHashFunc: leafHashFunc, nonLeafHashFunc: nonLeafHashFunc}
+	smt := SMT{fullNodes: [][]Hash{}, emptyTreeRootHash: []Hash{emptyLeafHash}, emptyLeafHash: emptyLeafHash, leafHashFunc: leafHashFunc, nonLeafHashFunc: nonLeafHashFunc}
 	return smt, nil
 }
 
@@ -90,18 +90,18 @@ func (self *SMT) computeEmptyLeavesSubTreeHash(maxHeight int) error {
 		if err != nil {
 			return err
 		}
-		self.levelsUpHashOfEmptyLeaves = append(self.levelsUpHashOfEmptyLeaves, lastLevelHash)
+		self.emptyTreeRootHash = append(self.emptyTreeRootHash, lastLevelHash)
 	}
 	return nil
 }
 
-func (self *SMT) buildAllLevelNodes(nonEmptyLeaves [][]byte) error {
-	err := self.buildLeavesNodes(nonEmptyLeaves)
+func (self *SMT) buildAllLevelNodes(leaves [][]byte) error {
+	err := self.buildLeavesNodes(leaves)
 	if err != nil {
 		return err
 	}
 	for i := self.treeHeight; i > 1; i-- {
-		err := self.buildInternalOneLevelNodes(i - 1)
+		err := self.computeNodesAt(i - 1)
 		if err != nil {
 			return err
 		}
@@ -109,45 +109,45 @@ func (self *SMT) buildAllLevelNodes(nonEmptyLeaves [][]byte) error {
 	return nil
 }
 
-func (self *SMT) buildLeavesNodes(nonEmptyLeaves [][]byte) error {
+func (self *SMT) buildLeavesNodes(leaves [][]byte) error {
 	hashes := []Hash{}
-	counts := len(nonEmptyLeaves)
-	for i := 0; i < counts; i++ {
-		hash, err := self.leafHash(nonEmptyLeaves[i])
+	count := len(leaves)
+	for i := 0; i < count; i++ {
+		hash, err := self.leafHash(leaves[i])
 		if err != nil {
 			return err
 		}
 		hashes = append(hashes, hash)
 	}
-	self.nodesWithoutEmptyLeavesSubTree = append(self.nodesWithoutEmptyLeavesSubTree, hashes)
+	self.fullNodes = append(self.fullNodes, hashes)
 	return nil
 }
 
-func (self *SMT) buildInternalOneLevelNodes(levelsNo uint) error {
-	lastLevelNodesHash := self.nodesWithoutEmptyLeavesSubTree[self.treeHeight-1-levelsNo]
-	counts := len(lastLevelNodesHash)
+func (self *SMT) computeNodesAt(level uint) error {
+	lastLevelNodesHash := self.fullNodes[self.treeHeight-1-level]
+	count := len(lastLevelNodesHash)
 	hashes := []Hash{}
-	for i := 0; i < counts/2; i++ {
+	for i := 0; i < count/2; i++ {
 		hash, err := self.parentHash(lastLevelNodesHash[2*i], lastLevelNodesHash[2*i+1])
 		if err != nil {
 			return err
 		}
 		hashes = append(hashes, hash)
 	}
-	if counts%2 != 0 {
-		siblingEmptyTreeHash := self.levelsUpHashOfEmptyLeaves[self.treeHeight-1-levelsNo]
-		hash, err := self.parentHash(lastLevelNodesHash[counts-1], siblingEmptyTreeHash)
+	if count%2 != 0 {
+		siblingEmptyTreeHash := self.emptyTreeRootHash[self.treeHeight-1-level]
+		hash, err := self.parentHash(lastLevelNodesHash[count-1], siblingEmptyTreeHash)
 		if err != nil {
 			return err
 		}
 		hashes = append(hashes, hash)
 	}
-	self.nodesWithoutEmptyLeavesSubTree = append(self.nodesWithoutEmptyLeavesSubTree, hashes)
+	self.fullNodes = append(self.fullNodes, hashes)
 	return nil
 }
 
 func (self *SMT) proofNodeAt(index int, level int) ProofNode {
-	hashes := self.nodesWithoutEmptyLeavesSubTree[int(self.treeHeight)-level-1]
+	hashes := self.fullNodes[int(self.treeHeight)-level-1]
 	var hash Hash
 	left := false
 	if index%2 == 1 {
@@ -157,7 +157,7 @@ func (self *SMT) proofNodeAt(index int, level int) ProofNode {
 		hash = hashes[index-1]
 	} else {
 		if len(hashes)-1 < index+1 {
-			hash = self.levelsUpHashOfEmptyLeaves[level+1]
+			hash = self.emptyTreeRootHash[level+1]
 		} else {
 			hash = hashes[index+1]
 		}
