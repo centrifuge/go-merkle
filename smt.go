@@ -117,8 +117,9 @@ func (self *SMT) computeNodesAt(level uint) error {
 	lastLevelNodesHash := self.fullNodes[self.treeHeight-1-level]
 	count := len(lastLevelNodesHash)
 	hashes := []Hash{}
-	for i := 0; i < count/2; i++ {
-		hash, err := self.parentHash(lastLevelNodesHash[2*i], lastLevelNodesHash[2*i+1])
+	countRoundToEven := (count / 2) * 2
+	for i := 0; i < countRoundToEven; i += 2 {
+		hash, err := self.parentHash(lastLevelNodesHash[i], lastLevelNodesHash[i+1])
 		if err != nil {
 			return err
 		}
