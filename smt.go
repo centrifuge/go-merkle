@@ -137,7 +137,8 @@ func (self *SMT) computeNodesAt(level uint) error {
 }
 
 func (self *SMT) proofNodeAt(index int, level int) ProofNode {
-	hashes := self.fullNodes[int(self.treeHeight)-level-1]
+
+	hashes := self.fullNodes[int(self.treeHeight)-1-level]
 	var hash Hash
 	left := false
 	if index%2 == 1 {
@@ -147,7 +148,7 @@ func (self *SMT) proofNodeAt(index int, level int) ProofNode {
 		hash = hashes[index-1]
 	} else {
 		if len(hashes)-1 < index+1 {
-			hash = self.emptyTreeRootHash[level+1]
+			hash = self.emptyTreeRootHash[int(self.treeHeight)-1-level]
 		} else {
 			hash = hashes[index+1]
 		}
