@@ -142,7 +142,7 @@ func TestCacheWithSomeEmptyLeaves(t *testing.T) {
 	expectedRoot := hash2Value(left, right, hash)
 
 	assert.Equal(t, expectedRoot, tree.RootHash())
-	assert.Equal(t, 3 + 2 + 1 + 1 + 1, totalHashes(tree.nodesWithoutEmptyLeavesSubTree))
+	assert.Equal(t, 3+2+1+1+1, totalHashes(tree.nodesWithoutEmptyLeavesSubTree))
 }
 
 func TestCacheWithoutEmptyLeaves(t *testing.T) {
