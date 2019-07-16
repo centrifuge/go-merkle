@@ -154,6 +154,24 @@ func TestHashError(t *testing.T) {
 	tree = NewSMT(nil, decoratedHash)
 	err = tree.Generate(nil, 8)
 	assert.Nil(t, err)
+
+	items = testHashes[:3]
+	for i := 1; i <= 12; i++ {
+		hashCount = 0
+		decoratedHash := NewHashCountErrorDecorator(hash, &hashCount, i)
+		tree := NewSMT(nil, decoratedHash)
+
+		//this will cause 6 parentHash(...) call, every call cause 2 Writes(...) call, that is why loop is 12
+		err := tree.Generate(items, 8)
+		assert.Equal(t, err.Error(), "Hash error")
+	}
+
+	hashCount = 0
+	decoratedHash = NewHashCountErrorDecorator(hash, &hashCount, 12+1)
+	tree = NewSMT(nil, decoratedHash)
+	err = tree.Generate(items, 8)
+	assert.Nil(t, err)
+
 }
 
 func TestBigFullEmptyLeavesCache(t *testing.T) {
