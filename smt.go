@@ -3,21 +3,20 @@ package merkle
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"hash"
 )
 
-type SMT struct {
-	Nodes         map[string]SMTNode
-	Root          []byte
-	RootNode      SMTNode
-	LeafHash      hash.Hash
-	NonLeafHash   hash.Hash
-	EmptyLeafHash []byte
+type Hash []byte
 
-	cachedAllLevelsHashOfEmptyLeaves    [][]byte
-	cachedAllLevelsHashHexOfEmptyLeaves []string
-	treeHeight                          uint
+type SMT struct {
+	nodesWithoutEmptyLeavesSubTree [][]Hash
+	LeafHash                       hash.Hash
+	NonLeafHash                    hash.Hash
+	EmptyLeafHash                  []byte
+
+	levelsUpHashOfEmptyLeaves []Hash
+	treeHeight                uint
+	noOfNonEmptyLeaves        int
 }
 
 func NewSMTWithTwoHashFuncs(leafHash hash.Hash, nonLeafHash hash.Hash) (SMT, error) {
@@ -32,87 +31,88 @@ func NewSMTWithNonLeafHashAndEmptyLeafHashValue(emptyLeafHash []byte, nonLeafHas
 	return newSMT(nil, nonLeafHash, emptyLeafHash)
 }
 
-type SMTNode interface {
-	GetHash(tree *SMT) []byte
-	GetLeftNode(tree *SMT) SMTNode
-	GetRightNode(tree *SMT) SMTNode
+func (self *SMT) RootHash() []byte {
+	if self.noOfNonEmptyLeaves == 0 {
+		return self.levelsUpHashOfEmptyLeaves[len(self.levelsUpHashOfEmptyLeaves)-1]
+	}
+	return self.nodesWithoutEmptyLeavesSubTree[self.treeHeight-1][0]
 }
 
-type LeafNode struct {
-	Hash []byte
-}
+func (self *SMT) buildLeavesNodes(nonEmptyLeaves [][]byte) error {
+	hashes := []Hash{}
+	counts := len(nonEmptyLeaves)
+	for i := 0; i < counts; i++ {
+		//  if (self.LeafHash != nil) {
+		hash, err := self.leafHash(nonEmptyLeaves[i])
+		if err != nil {
+			return err
+		}
+		hashes = append(hashes, hash)
+		//   }
+	}
 
-func NewLeafNode(hash []byte) SMTNode {
-	return LeafNode{Hash: hash}
-}
+	self.nodesWithoutEmptyLeavesSubTree = append(self.nodesWithoutEmptyLeavesSubTree, hashes)
 
-func (node LeafNode) GetHash(tree *SMT) []byte {
-	return node.Hash
-}
-
-func (node LeafNode) GetLeftNode(tree *SMT) SMTNode {
 	return nil
 }
 
-func (node LeafNode) GetRightNode(tree *SMT) SMTNode {
+func (self *SMT) buildAllLevelNodes(nonEmptyLeaves [][]byte) error {
+	err := self.buildLeavesNodes(nonEmptyLeaves)
+	if err != nil {
+		return err
+	}
+	for i := self.treeHeight; i > 1; i-- {
+		err := self.buildInternalOneLevelNodes(i - 1)
+		if err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-type NodeWithAtLeastOneNonEmptyLeafInLeftChild struct {
-	Hash                    []byte
-	LeftChildHashHexString  string
-	RightChildHashHexString string
+func (self *SMT) buildInternalOneLevelNodes(levelsNo uint) error {
+	lastLevelNodesHash := self.nodesWithoutEmptyLeavesSubTree[self.treeHeight-1-levelsNo]
+	counts := len(lastLevelNodesHash)
+	hashes := []Hash{}
+	for i := 0; i < counts/2; i++ {
+		hash, err := self.parentHash(lastLevelNodesHash[2*i], lastLevelNodesHash[2*i+1])
+		if err != nil {
+			return err
+		}
+		hashes = append(hashes, hash)
+	}
+	if counts%2 != 0 {
+		siblingEmptyTreeHash := self.levelsUpHashOfEmptyLeaves[self.treeHeight-1-levelsNo]
+		hash, err := self.parentHash(lastLevelNodesHash[counts-1], siblingEmptyTreeHash)
+		if err != nil {
+			return err
+		}
+		hashes = append(hashes, hash)
+	}
+	self.nodesWithoutEmptyLeavesSubTree = append(self.nodesWithoutEmptyLeavesSubTree, hashes)
+	return nil
 }
 
-func NewNodeWithAtLeastOneNonEmptyLeafInLeftChild(hash []byte, left string, right string) SMTNode {
-	return NodeWithAtLeastOneNonEmptyLeafInLeftChild{Hash: hash, LeftChildHashHexString: left, RightChildHashHexString: right}
-}
-
-func (node NodeWithAtLeastOneNonEmptyLeafInLeftChild) GetHash(tree *SMT) []byte {
-	return node.Hash
-}
-
-func (node NodeWithAtLeastOneNonEmptyLeafInLeftChild) GetLeftNode(tree *SMT) SMTNode {
-	return tree.Nodes[node.LeftChildHashHexString]
-}
-
-func (node NodeWithAtLeastOneNonEmptyLeafInLeftChild) GetRightNode(tree *SMT) SMTNode {
-	return tree.Nodes[node.RightChildHashHexString]
-}
-
-type NodeWithAllEmptyLeaf struct {
-	Index int
-}
-
-func NewNodeWithAllEmptyLeaf(index int) SMTNode {
-	return NodeWithAllEmptyLeaf{Index: index}
-}
-
-func (node NodeWithAllEmptyLeaf) GetHash(tree *SMT) []byte {
-	return tree.cachedAllLevelsHashOfEmptyLeaves[node.Index]
-}
-
-func (node NodeWithAllEmptyLeaf) GetLeftNode(tree *SMT) SMTNode {
-	hashHex := tree.cachedAllLevelsHashHexOfEmptyLeaves[node.Index+1]
-	return tree.Nodes[hashHex]
-}
-
-func (node NodeWithAllEmptyLeaf) GetRightNode(tree *SMT) SMTNode {
-	return node.GetLeftNode(tree)
-}
-
-func (self *SMT) Generate(blocks [][]byte) error {
-	if !isPowerOfTwo(uint64(len(blocks))) {
+func (self *SMT) Generate(nonEmptyLeaves [][]byte, totalSize uint64) error {
+	if !isPowerOfTwo(totalSize) {
 		return errors.New("Leaves number of SMT tree should be power of 2")
 	}
-	self.treeHeight = uint(logBaseTwo(uint64(len(blocks))) + 1)
-	root, err := self.generateSMT(0, len(blocks)-1, blocks)
-	if err == nil {
-		self.Root = root
-		rootHashHex := fmt.Sprintf("%x", root)
-		self.RootNode = self.Nodes[rootHashHex]
+	if uint64(len(nonEmptyLeaves)) > totalSize {
+		return errors.New("NonEmptyLeaves is bigger than totalSize ")
 	}
-	return err
+	self.treeHeight = uint(logBaseTwo(totalSize) + 1)
+	self.noOfNonEmptyLeaves = len(nonEmptyLeaves)
+	noOfEmtpyLeaves := totalSize - uint64(len(nonEmptyLeaves))
+
+	maxEmtySubTreeHeight := 0
+	for i := noOfEmtpyLeaves; i > 0; i = i >> 1 {
+		maxEmtySubTreeHeight++
+	}
+	err := self.computeEmptyLeavesSubTreeHash(maxEmtySubTreeHeight)
+	if err != nil {
+		return err
+	}
+	return self.buildAllLevelNodes(nonEmptyLeaves)
 }
 
 type ProofNode struct {
@@ -120,128 +120,55 @@ type ProofNode struct {
 	Left bool
 }
 
-func (self *SMT) GetMerkelProof(leafNo uint) []ProofNode {
-	proofs := []ProofNode{}
-	parentNode := self.RootNode
+func (self *SMT) proofNodeAt(index int, level int) ProofNode {
+  hashes := self.nodesWithoutEmptyLeavesSubTree[int(self.treeHeight)-level-1]
+	var hash Hash
+	left := false
+	if index % 2 == 1 {
+		left = true
+	}
 
-	for i := self.treeHeight - 1; i > 0; i-- {
-		mask := uint(1) << (i - 1)
-		bit := mask & leafNo
-		var sibleHash []byte
-		left := false
-		if bit > 0 {
-			sibleHash = parentNode.GetLeftNode(self).GetHash(self)
-			left = true
-			parentNode = parentNode.GetRightNode(self)
+  if left {
+		hash = hashes[index-1]
+	} else {
+		if len(hashes)-1 < index+1 {
+      hash = self.levelsUpHashOfEmptyLeaves[level + 1]
 		} else {
-			sibleHash = parentNode.GetRightNode(self).GetHash(self)
-			parentNode = parentNode.GetLeftNode(self)
+			hash = hashes[index+1]
 		}
-		proofNode := ProofNode{Hash: sibleHash, Left: left}
-		proofs = append([]ProofNode{proofNode}, proofs...)
+	}
 
+	return ProofNode{Hash: hash, Left: left}
+}
+
+func (self *SMT) GetMerkelProof(leafNo uint) []ProofNode {
+  proofs := []ProofNode{}
+	level := int(self.treeHeight - 1)
+	index := leafNo
+	for i := level; i > 0; i-- {
+		proofNode := self.proofNodeAt(int(index), int(i))
+		proofs = append(proofs, proofNode)
+		index = index / 2
 	}
 	return proofs
 }
 
 func newSMT(leafHash hash.Hash, nonLeafHash hash.Hash, emptyLeafHash []byte) (SMT, error) {
-	hashHex := fmt.Sprintf("%x", emptyLeafHash)
-
-	smt := SMT{Nodes: map[string]SMTNode{}, cachedAllLevelsHashOfEmptyLeaves: [][]byte{emptyLeafHash}, cachedAllLevelsHashHexOfEmptyLeaves: []string{hashHex}, EmptyLeafHash: emptyLeafHash, LeafHash: leafHash, NonLeafHash: nonLeafHash}
+	smt := SMT{nodesWithoutEmptyLeavesSubTree: [][]Hash{}, levelsUpHashOfEmptyLeaves: []Hash{emptyLeafHash}, EmptyLeafHash: emptyLeafHash, LeafHash: leafHash, NonLeafHash: nonLeafHash}
 	return smt, nil
 }
 
-func (self *SMT) generateSMT(start int, end int, blocks [][]byte) ([]byte, error) {
-
-	totalEle := (end - start) + 1
-	if self.isEmptyLeaf(blocks[start]) {
-		return self.computeEmptyLeavesSubTreeHash(totalEle)
-	}
-
-	if totalEle == 2 {
-		left, err := self.leafHash(blocks[start])
-		if err != nil {
-			return []byte{}, nil
-		}
-		right, err := self.leafHash(blocks[start+1])
-		if err != nil {
-			return []byte{}, nil
-		}
-		hash, err := self.parentHash(left, right)
-		if err != nil {
-			return []byte{}, nil
-		}
-		self.addNodeWithAtLeastOneNonEmptyLeafInLeftChild(hash, left, right)
-		return hash, err
-	}
-
-	leftStart := start
-	leftEnd := start + (totalEle / 2) - 1
-	rightStart := leftEnd + 1
-	rightEnd := end
-
-	var rightHash []byte
+func (self *SMT) computeEmptyLeavesSubTreeHash(maxHeight int) error {
+	lastLevelHash := self.EmptyLeafHash
 	var err error
-	if self.isEmptyLeaf(blocks[rightStart]) {
-		rightHash, err = self.computeEmptyLeavesSubTreeHash(rightEnd - rightStart + 1)
-	} else {
-		rightHash, err = self.generateSMT(rightStart, rightEnd, blocks)
-	}
-	if err != nil {
-		return []byte{}, err
-	}
-
-	leftHash, err := self.generateSMT(leftStart, leftEnd, blocks)
-	if err != nil {
-		return []byte{}, err
-	}
-
-	hash, err := self.parentHash(leftHash, rightHash)
-	if err != nil {
-		return []byte{}, nil
-	}
-	self.addNodeWithAtLeastOneNonEmptyLeafInLeftChild(hash, leftHash, rightHash)
-	return hash, err
-}
-
-func (self *SMT) computeEmptyLeavesSubTreeHash(leavesNumber int) ([]byte, error) {
-	if 2 == leavesNumber {
-		hash := self.EmptyLeafHash
-		var err error
-		hash, err = self.parentHash(hash, hash)
+	for i := 1; i < maxHeight; i++ {
+		lastLevelHash, err = self.parentHash(lastLevelHash, lastLevelHash)
 		if err != nil {
-			return []byte{}, err
+			return err
 		}
-		self.addNodeWithAllEmptyLeaf(hash)
-		return hash, nil
+		self.levelsUpHashOfEmptyLeaves = append(self.levelsUpHashOfEmptyLeaves, lastLevelHash)
 	}
-
-	levels := logBaseTwo(uint64(leavesNumber))
-	if self.cachedAllLevelsHashOfEmptyLeaves != nil && uint64(len(self.cachedAllLevelsHashOfEmptyLeaves)) > levels {
-		return self.cachedAllLevelsHashOfEmptyLeaves[levels], nil
-	}
-
-	nextLevelHash, err := self.computeEmptyLeavesSubTreeHash(leavesNumber / 2)
-	if err != nil {
-		return []byte{}, nil
-	}
-	combinedHash, err := self.parentHash(nextLevelHash, nextLevelHash)
-	if err != nil {
-		return []byte{}, nil
-	}
-
-	self.addNodeWithAllEmptyLeaf(combinedHash)
-
-	return combinedHash, nil
-}
-
-func (self *SMT) addNodeWithAtLeastOneNonEmptyLeafInLeftChild(hash []byte, leftHash []byte, rightHash []byte) SMTNode {
-	leftHashHex := fmt.Sprintf("%x", leftHash)
-	rightHashHex := fmt.Sprintf("%x", rightHash)
-	hashHex := fmt.Sprintf("%x", hash)
-	smtNode := NewNodeWithAtLeastOneNonEmptyLeafInLeftChild(hash, leftHashHex, rightHashHex)
-	self.Nodes[hashHex] = smtNode
-	return smtNode
+	return nil
 }
 
 func (self *SMT) isEmptyLeaf(item []byte) bool {
@@ -252,21 +179,11 @@ func (self *SMT) isEmptyLeaf(item []byte) bool {
 	}
 }
 
-func (self *SMT) addLeafNode(leafHash []byte) {
-	leafHashHex := fmt.Sprintf("%x", leafHash)
-	self.Nodes[leafHashHex] = NewLeafNode(leafHash)
-}
-
 func (self *SMT) leafHash(leaf []byte) ([]byte, error) {
 	if self.LeafHash == nil {
-		self.addLeafNode(leaf)
 		return leaf, nil
 	}
 
-	if self.isEmptyLeaf(leaf) {
-		self.addLeafNode(self.EmptyLeafHash)
-		return self.EmptyLeafHash, nil
-	}
 	leafHashFunc := self.LeafHash
 	defer leafHashFunc.Reset()
 
@@ -275,30 +192,24 @@ func (self *SMT) leafHash(leaf []byte) ([]byte, error) {
 		return []byte{}, err
 	}
 	leafHash := leafHashFunc.Sum(nil)
-	self.addLeafNode(leafHash)
 	return leafHash, nil
-}
-
-func (self *SMT) addNodeWithAllEmptyLeaf(hash []byte) {
-	self.cachedAllLevelsHashOfEmptyLeaves = append(self.cachedAllLevelsHashOfEmptyLeaves, hash)
-	hashHex := fmt.Sprintf("%x", hash)
-	self.Nodes[hashHex] = NewNodeWithAllEmptyLeaf(len(self.cachedAllLevelsHashOfEmptyLeaves) - 1)
-	self.cachedAllLevelsHashHexOfEmptyLeaves = append(self.cachedAllLevelsHashHexOfEmptyLeaves, hashHex)
 }
 
 func (self *SMT) parentHash(item1 []byte, item2 []byte) ([]byte, error) {
 	hash := self.NonLeafHash
 	defer hash.Reset()
-	combinedItem := make([]byte, len(item1)+len(item2))
-	copy(combinedItem[:len(item1)], item1)
-	copy(combinedItem[len(item1):], item2)
 
-	_, err := hash.Write(combinedItem[:])
+	_, err := hash.Write(item1)
+	if err != nil {
+		return []byte{}, err
+	}
+	_, err = hash.Write(item2)
 	if err != nil {
 		return []byte{}, err
 	}
 	return hash.Sum(nil), nil
 }
+
 func emptyLeafHash(h hash.Hash) ([]byte, error) {
 	defer h.Reset()
 	_, err := h.Write([]byte{})
