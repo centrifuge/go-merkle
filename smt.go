@@ -15,24 +15,15 @@ type ProofNode struct {
 // A Sparse Merkle Tree which support all empty leaves lies in
 type SMT struct {
 	fullNodes             [][]Hash
-	leafHashFunc          hash.Hash
-	nonLeafHashFunc       hash.Hash
-	emptyLeafHash         []byte
+	hashFunc              hash.Hash
+	emptyHash             []byte
 	emptyTreeRootHash     []Hash
 	treeHeight            uint
 	countOfNonEmptyLeaves int
 }
 
-func NewSMTWithTwoHashFuncs(leafHashFunc hash.Hash, nonLeafHashFunc hash.Hash) (SMT, error) {
-	emptyLeafHash, err := emptyLeafHash(leafHashFunc)
-	if err != nil {
-		return SMT{}, err
-	}
-	return newSMT(leafHashFunc, nonLeafHashFunc, emptyLeafHash)
-}
-
-func NewSMTWithNonLeafHashAndEmptyLeafHashValue(emptyLeafHash []byte, nonLeafHashFunc hash.Hash) (SMT, error) {
-	return newSMT(nil, nonLeafHashFunc, emptyLeafHash)
+func NewSMT(emptyHash []byte, hashFunc hash.Hash) SMT {
+	return SMT{fullNodes: [][]Hash{}, emptyTreeRootHash: []Hash{emptyHash}, emptyHash: emptyHash, hashFunc: hashFunc}
 }
 
 func (self *SMT) RootHash() []byte {
@@ -46,7 +37,8 @@ func (self *SMT) Generate(leaves [][]byte, totalSize uint64) error {
 	if !isPowerOfTwo(totalSize) {
 		return errors.New("Leaves number of SMT tree should be power of 2")
 	}
-	if uint64(len(leaves)) > totalSize {
+	count := len(leaves)
+	if uint64(count) > totalSize {
 		return errors.New("NonEmptyLeaves is bigger than totalSize ")
 	}
 	self.treeHeight = uint(logBaseTwo(totalSize) + 1)
@@ -61,7 +53,14 @@ func (self *SMT) Generate(leaves [][]byte, totalSize uint64) error {
 	if err != nil {
 		return err
 	}
-	return self.buildAllLevelNodes(leaves)
+
+	hashes := []Hash{}
+	for i := 0; i < count; i++ {
+		hashes = append(hashes, leaves[i])
+	}
+	self.fullNodes = append(self.fullNodes, hashes)
+
+	return self.computeAllLevelNodes(leaves)
 }
 
 func (self *SMT) GetMerkleProof(leafNo uint) []ProofNode {
@@ -77,13 +76,9 @@ func (self *SMT) GetMerkleProof(leafNo uint) []ProofNode {
 }
 
 //Following are non public function
-func newSMT(leafHashFunc hash.Hash, nonLeafHashFunc hash.Hash, emptyLeafHash []byte) (SMT, error) {
-	smt := SMT{fullNodes: [][]Hash{}, emptyTreeRootHash: []Hash{emptyLeafHash}, emptyLeafHash: emptyLeafHash, leafHashFunc: leafHashFunc, nonLeafHashFunc: nonLeafHashFunc}
-	return smt, nil
-}
 
 func (self *SMT) computeEmptyLeavesSubTreeHash(maxHeight int) error {
-	lastLevelHash := self.emptyLeafHash
+	lastLevelHash := self.emptyHash
 	var err error
 	for i := 1; i < maxHeight; i++ {
 		lastLevelHash, err = self.parentHash(lastLevelHash, lastLevelHash)
@@ -95,31 +90,13 @@ func (self *SMT) computeEmptyLeavesSubTreeHash(maxHeight int) error {
 	return nil
 }
 
-func (self *SMT) buildAllLevelNodes(leaves [][]byte) error {
-	err := self.buildLeavesNodes(leaves)
-	if err != nil {
-		return err
-	}
+func (self *SMT) computeAllLevelNodes(leaves [][]byte) error {
 	for i := self.treeHeight; i > 1; i-- {
 		err := self.computeNodesAt(i - 1)
 		if err != nil {
 			return err
 		}
 	}
-	return nil
-}
-
-func (self *SMT) buildLeavesNodes(leaves [][]byte) error {
-	hashes := []Hash{}
-	count := len(leaves)
-	for i := 0; i < count; i++ {
-		hash, err := self.leafHash(leaves[i])
-		if err != nil {
-			return err
-		}
-		hashes = append(hashes, hash)
-	}
-	self.fullNodes = append(self.fullNodes, hashes)
 	return nil
 }
 
@@ -165,24 +142,8 @@ func (self *SMT) proofNodeAt(index int, level int) ProofNode {
 	return ProofNode{Hash: hash, Left: left}
 }
 
-func (self *SMT) leafHash(leaf []byte) ([]byte, error) {
-	if self.leafHashFunc == nil {
-		return leaf, nil
-	}
-
-	leafHashFunc := self.leafHashFunc
-	defer leafHashFunc.Reset()
-
-	_, err := leafHashFunc.Write(leaf[:])
-	if err != nil {
-		return []byte{}, err
-	}
-	leafHash := leafHashFunc.Sum(nil)
-	return leafHash, nil
-}
-
 func (self *SMT) parentHash(item1 []byte, item2 []byte) ([]byte, error) {
-	hash := self.nonLeafHashFunc
+	hash := self.hashFunc
 	defer hash.Reset()
 
 	_, err := hash.Write(item1)
@@ -194,14 +155,4 @@ func (self *SMT) parentHash(item1 []byte, item2 []byte) ([]byte, error) {
 		return []byte{}, err
 	}
 	return hash.Sum(nil), nil
-}
-
-func emptyLeafHash(h hash.Hash) ([]byte, error) {
-	defer h.Reset()
-	_, err := h.Write([]byte{})
-	if err != nil {
-		return []byte{}, err
-	}
-	hash := h.Sum(nil)
-	return hash, nil
 }

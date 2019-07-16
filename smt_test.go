@@ -37,158 +37,6 @@ func NewHashCountDecorator(h hash.Hash, count *int) HashCountDecorator {
 	return HashCountDecorator{Hash: h, Count: count}
 }
 
-func totalHashes(nodes [][]Hash) int {
-	length := len(nodes)
-	result := 0
-	for i := 0; i < length; i++ {
-		result += len(nodes[i])
-	}
-	return result
-}
-
-func TestBigFullEmptyLeavesCache(t *testing.T) {
-
-	leafHashCount := 0
-	nonLeafHashCount := 0
-	hash := md5.New()
-	decoratedLeafHash := NewHashCountDecorator(hash, &leafHashCount)
-	decoratedNonLeafHash := NewHashCountDecorator(hash, &nonLeafHashCount)
-
-	tree, err := NewSMTWithTwoHashFuncs(decoratedLeafHash, decoratedNonLeafHash)
-	assert.Nil(t, err)
-	//2^20 empty leaves
-	err = tree.Generate(nil, 1<<20)
-	assert.Nil(t, err)
-
-	assert.Equal(t, 20, nonLeafHashCount)
-	assert.Equal(t, 1, leafHashCount)
-
-	assert.Equal(t, 0, totalHashes(tree.fullNodes))
-}
-
-func TestCacheFullEmptyLeaves(t *testing.T) {
-	leafHashCount := 0
-	nonLeafHashCount := 0
-	hash := md5.New()
-	decoratedLeafHash := NewHashCountDecorator(hash, &leafHashCount)
-	decoratedNonLeafHash := NewHashCountDecorator(hash, &nonLeafHashCount)
-	tree, err := NewSMTWithTwoHashFuncs(decoratedLeafHash, decoratedNonLeafHash)
-	assert.Nil(t, err)
-	err = tree.Generate(nil, 16)
-	assert.Nil(t, err)
-	//four levels
-	assert.Equal(t, 4, nonLeafHashCount)
-	assert.Equal(t, 1, leafHashCount)
-
-	expectedRoot := []byte{211, 106, 3, 253, 238, 164, 19, 12, 143, 166, 236, 114, 118, 192, 223, 97}
-	assert.Equal(t, expectedRoot, tree.RootHash())
-
-	assert.Equal(t, 0, totalHashes(tree.fullNodes))
-}
-
-func TestCacheWithHalveEmptyLeaves(t *testing.T) {
-	items := [][]byte{[]byte("alpha1"), []byte("alpha2")}
-
-	hash := md5.New()
-	tree, err := NewSMTWithTwoHashFuncs(hash, hash)
-	assert.Nil(t, err)
-	err = tree.Generate(items, 4)
-	assert.Nil(t, err)
-
-	hash1 := hash2Value(hashValue([]byte("alpha1"), hash), hashValue([]byte("alpha2"), hash), hash)
-	hash2 := hash2Value(hashValue([]byte{}, hash), hashValue([]byte{}, hash), hash)
-	expectedRoot := hash2Value(hash1, hash2, hash)
-
-	assert.Equal(t, expectedRoot, tree.RootHash())
-	assert.Equal(t, 2+1+1, totalHashes(tree.fullNodes))
-}
-
-func TestCacheWithSomeEmptyLeaves(t *testing.T) {
-	items := [][]byte{[]byte("alpha1"), []byte("alpha2"), []byte("alpha3")}
-
-	leafHashCount := 0
-	nonLeafHashCount := 0
-	hash := md5.New()
-	decoratedLeafHash := NewHashCountDecorator(hash, &leafHashCount)
-	decoratedNonLeafHash := NewHashCountDecorator(hash, &nonLeafHashCount)
-	tree, err := NewSMTWithTwoHashFuncs(decoratedLeafHash, decoratedNonLeafHash)
-	assert.Nil(t, err)
-	//13 empty leaves
-	err = tree.Generate(items, 16)
-	assert.Nil(t, err)
-
-	assert.Equal(t, 3+2+2+1, nonLeafHashCount)
-	assert.Equal(t, 4, leafHashCount)
-
-	hash1 := hash2Value(hashValue([]byte{}, hash), hashValue([]byte{}, hash), hash)
-	hash2 := hash2Value(hashValue([]byte{}, hash), hashValue([]byte{}, hash), hash)
-	fourEmptyLeafHash := hash2Value(hash1, hash2, hash)
-
-	hash1 = hash2Value(hashValue([]byte("alpha1"), hash), hashValue([]byte("alpha2"), hash), hash)
-	hash2 = hash2Value(hashValue([]byte("alpha3"), hash), hashValue([]byte{}, hash), hash)
-	tmp := hash2Value(hash1, hash2, hash)
-
-	left := hash2Value(tmp, fourEmptyLeafHash, hash)
-	right := hash2Value(fourEmptyLeafHash, fourEmptyLeafHash, hash)
-
-	expectedRoot := hash2Value(left, right, hash)
-
-	assert.Equal(t, expectedRoot, tree.RootHash())
-	assert.Equal(t, 3+2+1+1+1, totalHashes(tree.fullNodes))
-}
-
-func TestCacheWithoutEmptyLeaves(t *testing.T) {
-	items := [][]byte{[]byte("alpha1"), []byte("alpha2"), []byte("alpha3"), []byte("alpha4"), []byte("alpha5"), []byte("alpha6"), []byte("alpha7"), []byte("alpha8"), []byte("alpha9"), []byte("alpha10"), []byte("alpha11"), []byte("alpha12"), []byte("alpha13"), []byte("alpha14"), []byte("alpha15"), []byte("alpha16")}
-
-	leafHashCount := 0
-	nonLeafHashCount := 0
-	hash := md5.New()
-	decoratedLeafHash := NewHashCountDecorator(hash, &leafHashCount)
-	decoratedNonLeafHash := NewHashCountDecorator(hash, &nonLeafHashCount)
-	tree, err := NewSMTWithTwoHashFuncs(decoratedLeafHash, decoratedNonLeafHash)
-	assert.Nil(t, err)
-	err = tree.Generate(items, 16)
-	assert.Nil(t, err)
-
-	assert.Equal(t, 8+4+2+1, nonLeafHashCount)
-	assert.Equal(t, 16+1, leafHashCount)
-	expectedRoot := []byte{128, 114, 175, 140, 59, 253, 14, 136, 26, 157, 15, 64, 61, 36, 68, 36}
-	assert.Equal(t, expectedRoot, tree.RootHash())
-	assert.Equal(t, 16+8+4+2+1, totalHashes(tree.fullNodes))
-}
-
-func TestCacheWithoutLeafHashFunc(t *testing.T) {
-	nonLeafHashCount := 0
-	hash := md5.New()
-	decoratedNonLeafHash := NewHashCountDecorator(hash, &nonLeafHashCount)
-
-	emptyLeafHash, err := emptyLeafHash(hash)
-	assert.Nil(t, err)
-
-	items := [][]byte{[]byte("alpha1"), []byte("alpha2"), []byte("alpha3")}
-
-	tree, err := NewSMTWithNonLeafHashAndEmptyLeafHashValue(emptyLeafHash, decoratedNonLeafHash)
-	assert.Nil(t, err)
-
-	//13 empty leaves
-	err = tree.Generate(items, 16)
-	assert.Nil(t, err)
-
-	hash1 := hash2Value(emptyLeafHash, emptyLeafHash, hash)
-	fourEmptyLeafHash := hash2Value(hash1, hash1, hash)
-
-	hash1 = hash2Value([]byte("alpha1"), []byte("alpha2"), hash)
-	hash2 := hash2Value([]byte("alpha3"), emptyLeafHash, hash)
-
-	tmp := hash2Value(hash1, hash2, hash)
-	left := hash2Value(tmp, fourEmptyLeafHash, hash)
-	right := hash2Value(fourEmptyLeafHash, fourEmptyLeafHash, hash)
-	expectedRoot := hash2Value(left, right, hash)
-
-	assert.Equal(t, expectedRoot, tree.RootHash())
-	assert.Equal(t, 3+2+1+1+1, totalHashes(tree.fullNodes))
-}
-
 func hashValue(item []byte, hash hash.Hash) []byte {
 	defer hash.Reset()
 	hash.Write(item)
@@ -202,23 +50,132 @@ func hash2Value(item1 []byte, item2 []byte, hash hash.Hash) []byte {
 	return hash.Sum(nil)
 }
 
-func TestGetMerkleProofs(t *testing.T) {
-	items := [][]byte{[]byte("alpha1"), []byte("alpha2"), []byte("alpha3"), []byte("alpha4")}
+func totalHashes(nodes [][]Hash) int {
+	length := len(nodes)
+	result := 0
+	for i := 0; i < length; i++ {
+		result += len(nodes[i])
+	}
+	return result
+}
 
+var testHashes = [][]byte{hashValue([]byte("alpha0"), hashFunc), hashValue([]byte("alpha1"), hashFunc), hashValue([]byte("alpha2"), hashFunc), hashValue([]byte("alpha3"), hashFunc), hashValue([]byte("alpha4"), hashFunc), hashValue([]byte("alpha5"), hashFunc), hashValue([]byte("alpha6"), hashFunc), hashValue([]byte("alpha7"), hashFunc), hashValue([]byte("alpha8"), hashFunc), hashValue([]byte("alpha9"), hashFunc), hashValue([]byte("alpha10"), hashFunc), hashValue([]byte("alpha11"), hashFunc), hashValue([]byte("alpha12"), hashFunc), hashValue([]byte("alpha13"), hashFunc), hashValue([]byte("alpha14"), hashFunc), hashValue([]byte("alpha15"), hashFunc)}
+var emptyHash = emptyHashFunc(hashFunc)
+
+func TestBigFullEmptyLeavesCache(t *testing.T) {
+	hashCount := 0
 	hash := md5.New()
-	tree, err := NewSMTWithTwoHashFuncs(hash, hash)
+	decoratedHash := NewHashCountDecorator(hash, &hashCount)
+	tree := NewSMT(emptyHash, decoratedHash)
+
+	//2^20 empty leaves
+	err := tree.Generate(nil, 1<<20)
 	assert.Nil(t, err)
-	err = tree.Generate(items, 8)
+	assert.Equal(t, 20, hashCount)
+	assert.Equal(t, 0, totalHashes(tree.fullNodes))
+}
+
+func TestCacheFullEmptyLeaves(t *testing.T) {
+	hashCount := 0
+	hash := md5.New()
+	decoratedHash := NewHashCountDecorator(hash, &hashCount)
+	tree := NewSMT(emptyHash, decoratedHash)
+
+	// 16 empty leaves
+	err := tree.Generate(nil, 16)
+	assert.Nil(t, err)
+	assert.Equal(t, 4, hashCount)
+
+	expectedRoot := []byte{211, 106, 3, 253, 238, 164, 19, 12, 143, 166, 236, 114, 118, 192, 223, 97}
+	assert.Equal(t, expectedRoot, tree.RootHash())
+	assert.Equal(t, 0, totalHashes(tree.fullNodes))
+}
+
+var hashFunc = md5.New()
+
+func emptyHashFunc(h hash.Hash) []byte {
+	defer h.Reset()
+	h.Write([]byte{})
+	hash := h.Sum(nil)
+	return hash
+}
+
+func TestCacheWithHalveEmptyLeaves(t *testing.T) {
+	items := testHashes[:2]
+	tree := NewSMT(emptyHash, hashFunc)
+	err := tree.Generate(items, 4)
+	assert.Nil(t, err)
+
+	hash1 := hash2Value(testHashes[0], testHashes[1], hashFunc)
+	hash2 := hash2Value(emptyHash, emptyHash, hashFunc)
+	expectedRoot := hash2Value(hash1, hash2, hashFunc)
+
+	assert.Equal(t, expectedRoot, tree.RootHash())
+	assert.Equal(t, 2+1+1, totalHashes(tree.fullNodes))
+}
+
+func TestCacheWithSomeEmptyLeaves(t *testing.T) {
+	hash := hashFunc
+	items := testHashes[:3]
+	hashCount := 0
+	decoratedHash := NewHashCountDecorator(hash, &hashCount)
+	tree := NewSMT(emptyHash, decoratedHash)
+
+	//13 empty leaves
+	err := tree.Generate(items, 16)
+	assert.Nil(t, err)
+	assert.Equal(t, 3+2+2+1, hashCount)
+
+	hash1 := hash2Value(emptyHash, emptyHash, hash)
+	hash2 := hash2Value(emptyHash, emptyHash, hash)
+	fourEmptyLeafHash := hash2Value(hash1, hash2, hash)
+
+	hash1 = hash2Value(testHashes[0], testHashes[1], hash)
+	hash2 = hash2Value(testHashes[2], emptyHash, hash)
+	tmp := hash2Value(hash1, hash2, hash)
+
+	left := hash2Value(tmp, fourEmptyLeafHash, hash)
+	right := hash2Value(fourEmptyLeafHash, fourEmptyLeafHash, hash)
+
+	expectedRoot := hash2Value(left, right, hash)
+
+	assert.Equal(t, expectedRoot, tree.RootHash())
+	assert.Equal(t, 3+2+1+1+1, totalHashes(tree.fullNodes))
+}
+
+func TestCacheWithoutEmptyLeaves(t *testing.T) {
+	hash := hashFunc
+	items := testHashes
+	hashCount := 0
+
+	decoratedHash := NewHashCountDecorator(hash, &hashCount)
+	tree := NewSMT(emptyHash, decoratedHash)
+
+	err := tree.Generate(items, 16)
+	assert.Nil(t, err)
+
+	assert.Equal(t, 8+4+2+1, hashCount)
+	expectedRoot := []byte{0xac, 0xef, 0x51, 0x94, 0xbc, 0xa5, 0x1e, 0xe8, 0x6a, 0x1a, 0x2a, 0x5, 0xfd, 0x73, 0xa2, 0x3b}
+	assert.Equal(t, expectedRoot, tree.RootHash())
+	assert.Equal(t, 16+8+4+2+1, totalHashes(tree.fullNodes))
+}
+
+func TestGetMerkleProofs(t *testing.T) {
+	hash := hashFunc
+	items := testHashes[:4]
+
+	tree := NewSMT(emptyHash, hash)
+	err := tree.Generate(items, 8)
 	assert.Nil(t, err)
 
 	//proof of []byte("alpha3")
 	proof := tree.GetMerkleProof(1)
 
-	sibleHash := hashValue([]byte("alpha1"), hash)
+	sibleHash := testHashes[0]
 	proofNode := ProofNode{Left: true, Hash: sibleHash}
 	expectedProof := []ProofNode{proofNode}
 
-	sibleHash = hash2Value(hashValue([]byte("alpha3"), hash), hashValue([]byte("alpha4"), hash), hash)
+	sibleHash = hash2Value(testHashes[2], testHashes[3], hash)
 	proofNode = ProofNode{Left: false, Hash: sibleHash}
 	expectedProof = append(expectedProof, proofNode)
 
