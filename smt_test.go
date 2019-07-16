@@ -2,6 +2,7 @@ package merkle
 
 import (
 	"crypto/md5"
+	"errors"
 	"github.com/stretchr/testify/assert"
 	"hash"
 	"testing"
@@ -35,6 +36,40 @@ func (decor HashCountDecorator) Reset() {
 
 func NewHashCountDecorator(h hash.Hash, count *int) HashCountDecorator {
 	return HashCountDecorator{Hash: h, Count: count}
+}
+
+type HashCountErrorDecorator struct {
+	Hash             hash.Hash
+	CountHappenError int
+	Count            *int
+}
+
+func (decor HashCountErrorDecorator) Write(p []byte) (n int, err error) {
+	*decor.Count = *decor.Count + 1
+	if (*decor.Count) >= decor.CountHappenError {
+		return 0, errors.New("Hash error")
+	}
+	return decor.Hash.Write(p)
+}
+
+func (decor HashCountErrorDecorator) Sum(b []byte) []byte {
+	return decor.Hash.Sum(b)
+}
+
+func (decor HashCountErrorDecorator) BlockSize() int {
+	return decor.Hash.BlockSize()
+}
+
+func (decor HashCountErrorDecorator) Size() int {
+	return decor.Hash.Size()
+}
+
+func (decor HashCountErrorDecorator) Reset() {
+	decor.Hash.Reset()
+}
+
+func NewHashCountErrorDecorator(h hash.Hash, count *int, countHappenError int) HashCountErrorDecorator {
+	return HashCountErrorDecorator{Hash: h, Count: count, CountHappenError: countHappenError}
 }
 
 func hashValue(item []byte, hash hash.Hash) []byte {
@@ -81,6 +116,44 @@ func TestSMTNotFilled(t *testing.T) {
 	assert.Equal(t, err.Error(), "SMT tree is not filled")
 	_, err = tree.GetMerkleProof(1)
 	assert.Equal(t, err.Error(), "SMT tree is not filled")
+}
+
+func TestHashError(t *testing.T) {
+	hash := md5.New()
+	items := testHashes
+	hashCount := 0
+
+	for i := 1; i <= 30; i++ {
+		hashCount = 0
+		decoratedHash := NewHashCountErrorDecorator(hash, &hashCount, i)
+		tree := NewSMT(emptyHash, decoratedHash)
+
+		//this will cause 15 parentHash(...) call, every call cause 2 Writes(...) call, that is why loop is 30
+		err := tree.Generate(items, 16)
+		assert.Equal(t, err.Error(), "Hash error")
+	}
+
+	hashCount = 0
+	decoratedHash := NewHashCountErrorDecorator(hash, &hashCount, 31)
+	tree := NewSMT(emptyHash, decoratedHash)
+	err := tree.Generate(items, 16)
+	assert.Nil(t, err)
+
+	for i := 1; i <= 6; i++ {
+		hashCount = 0
+		decoratedHash := NewHashCountErrorDecorator(hash, &hashCount, i)
+		tree := NewSMT(nil, decoratedHash)
+
+		//this will cause 3 parentHash(...) call, every call cause 2 Writes(...) call, that is why loop is 6
+		err := tree.Generate(nil, 8)
+		assert.Equal(t, err.Error(), "Hash error")
+	}
+
+	hashCount = 0
+	decoratedHash = NewHashCountErrorDecorator(hash, &hashCount, 6+1)
+	tree = NewSMT(nil, decoratedHash)
+	err = tree.Generate(nil, 8)
+	assert.Nil(t, err)
 }
 
 func TestBigFullEmptyLeavesCache(t *testing.T) {
