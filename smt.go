@@ -21,14 +21,14 @@ type ProofNode struct {
 type SMT struct {
 	fullNodes             [][]Hash
 	hashFunc              hash.Hash
-	emptyHash             []byte
+	emptyHash             Hash
 	emptyTreeRootHash     []Hash
-	treeHeight            uint
+	treeHeight            int
 	countOfNonEmptyLeaves int
 	filled                bool
 }
 
-func NewSMT(emptyHash []byte, hashFunc hash.Hash) SMT {
+func NewSMT(emptyHash Hash, hashFunc hash.Hash) SMT {
 	return SMT{fullNodes: [][]Hash{}, emptyTreeRootHash: []Hash{emptyHash}, emptyHash: emptyHash, hashFunc: hashFunc}
 }
 
@@ -42,18 +42,18 @@ func (self *SMT) RootHash() ([]byte, error) {
 	return self.fullNodes[self.treeHeight-1][0], nil
 }
 
-func (self *SMT) Generate(leaves [][]byte, totalSize uint64) error {
-	if !isPowerOfTwo(totalSize) {
+func (self *SMT) Generate(leaves [][]byte, totalSize int) error {
+	if !isPowerOfTwo(uint64(totalSize)) {
 		return errors.New("Leaves number of SMT tree should be power of 2")
 	}
 	count := len(leaves)
-	if uint64(count) > totalSize {
+	if count > totalSize {
 		return errors.New("NonEmptyLeaves is bigger than totalSize")
 	}
-	self.treeHeight = uint(logBaseTwo(totalSize) + 1)
+	self.treeHeight = int(logBaseTwo(uint64(totalSize)) + 1)
 	self.countOfNonEmptyLeaves = len(leaves)
 
-	noOfEmtpyLeaves := totalSize - uint64(len(leaves))
+	noOfEmtpyLeaves := totalSize - len(leaves)
 	maxEmtySubTreeHeight := 0
 	for i := noOfEmtpyLeaves; i > 0; i = i >> 1 {
 		maxEmtySubTreeHeight++
@@ -119,7 +119,7 @@ func (self *SMT) computeAllLevelNodes(leaves [][]byte) error {
 	return nil
 }
 
-func (self *SMT) computeNodesAt(level uint) error {
+func (self *SMT) computeNodesAt(level int) error {
 	lastLevelNodesHash := self.fullNodes[self.treeHeight-1-level]
 	count := len(lastLevelNodesHash)
 	hashes := []Hash{}
@@ -163,7 +163,7 @@ func (self *SMT) proofNodeAt(index int, level int) ProofNode {
 	return ProofNode{Hash: hash, Left: left}
 }
 
-func (self *SMT) parentHash(item1 []byte, item2 []byte) ([]byte, error) {
+func (self *SMT) parentHash(item1 Hash, item2 Hash) ([]byte, error) {
 	hash := self.hashFunc
 	defer hash.Reset()
 
