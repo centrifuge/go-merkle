@@ -118,6 +118,15 @@ func TestSMTNotFilled(t *testing.T) {
 	assert.Equal(t, err.Error(), "SMT tree is not filled")
 }
 
+func TestSMTAlreadyFilled(t *testing.T) {
+	hash := hashFunc
+	tree := NewSMT(emptyHash, hash)
+	err := tree.Generate(testHashes, 32)
+	assert.Nil(t, err)
+	err = tree.Generate(testHashes, 64)
+	assert.Equal(t, err.Error(), "SMT tree already filled")
+}
+
 func TestHashError(t *testing.T) {
 	hash := md5.New()
 	items := testHashes

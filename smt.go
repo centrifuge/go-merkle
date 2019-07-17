@@ -43,6 +43,9 @@ func (self *SMT) RootHash() ([]byte, error) {
 }
 
 func (self *SMT) Generate(leaves [][]byte, totalSize int) error {
+	if self.filled {
+		return errors.New("SMT tree already filled")
+	}
 	if !isPowerOfTwo(uint64(totalSize)) {
 		return errors.New("Leaves number of SMT tree should be power of 2")
 	}
