@@ -10,13 +10,6 @@ import (
 	"hash"
 )
 
-type Hash []byte
-
-type ProofNode struct {
-	Hash []byte
-	Left bool
-}
-
 // A Sparse Merkle Tree which support all empty leaves lies in right
 type SMT struct {
 	fullNodes             [][]Hash
@@ -28,18 +21,18 @@ type SMT struct {
 	filled                bool
 }
 
-func NewSMT(emptyHash Hash, hashFunc hash.Hash) SMT {
-	return SMT{fullNodes: [][]Hash{}, emptyTreeRootHash: []Hash{emptyHash}, emptyHash: emptyHash, hashFunc: hashFunc}
+func NewSMT(emptyHash Hash, hashFunc hash.Hash) *SMT {
+	return &SMT{fullNodes: [][]Hash{}, emptyTreeRootHash: []Hash{emptyHash}, emptyHash: emptyHash, hashFunc: hashFunc}
 }
 
-func (self *SMT) RootHash() ([]byte, error) {
+func (self *SMT) RootHash() []byte {
 	if !self.filled {
-		return nil, errors.New("SMT tree is not filled")
+		return nil
 	}
 	if self.countOfNonEmptyLeaves == 0 {
-		return self.emptyTreeRootHash[len(self.emptyTreeRootHash)-1], nil
+		return self.emptyTreeRootHash[len(self.emptyTreeRootHash)-1]
 	}
-	return self.fullNodes[self.treeHeight-1][0], nil
+	return self.fullNodes[self.treeHeight-1][0]
 }
 
 func (self *SMT) Generate(leaves [][]byte, totalSize int) error {
