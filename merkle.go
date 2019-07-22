@@ -23,7 +23,7 @@ type TreeOptions struct {
 	// DisableHashLeaves determines whether leaf nodes should be hashed or not. By disabling this behavior,
 	// you can use a different hash function for leaves or generate a tree that contains already hashed
 	// values.
-	DisableHashLeaves bool
+	//DisableHashLeaves bool
 }
 
 // Node in the merkle tree
@@ -59,18 +59,17 @@ type Tree struct {
 	// Any particular behavior changing option
 	options TreeOptions
 
-	leafHashFunc    hash.Hash
-	nonLeafHashFunc hash.Hash
+	hashFunc hash.Hash
 }
 
-func NewTreeWithOpts(options TreeOptions, leafHashFunc hash.Hash, nonLeafHashFunc hash.Hash) *Tree {
-	tree := NewTree(leafHashFunc, nonLeafHashFunc)
+func NewTreeWithOpts(options TreeOptions, hashFunc hash.Hash) *Tree {
+	tree := NewTree(hashFunc)
 	tree.options = options
 	return tree
 }
 
-func NewTree(leafHashFunc hash.Hash, nonLeafHashFunc hash.Hash) *Tree {
-	return &Tree{nodes: nil, levels: nil, leafHashFunc: leafHashFunc, nonLeafHashFunc: nonLeafHashFunc}
+func NewTree(hashFunc hash.Hash) *Tree {
+	return &Tree{nodes: nil, levels: nil, hashFunc: hashFunc}
 }
 
 func (self *Tree) RootHash() []byte {
@@ -136,13 +135,14 @@ func (self *Tree) generate(blocks [][]byte) error {
 
 	// Create the leaf nodes
 	for i, block := range blocks {
-		var node Node
-		var err error
-		if self.options.DisableHashLeaves {
-			node, err = NewNode(nil, block)
-		} else {
-			node, err = NewNode(self.leafHashFunc, block)
-		}
+		/*	var node Node
+				var err error
+				if self.options.DisableHashLeaves {
+					node, err = NewNode(nil, block)
+				} else {
+					node, err = NewNode(self.leafHashFunc, block)
+		    }*/
+		node, err := NewNode(nil, block)
 		if err != nil {
 			return err
 		}
@@ -250,7 +250,7 @@ func (self *Tree) generateNode(left, right []byte) (Node, error) {
 		copy(data[len(left):], right)
 	}
 
-	return NewNode(self.nonLeafHashFunc, data)
+	return NewNode(self.hashFunc, data)
 }
 
 // Returns the height and number of nodes in an unbalanced binary tree given

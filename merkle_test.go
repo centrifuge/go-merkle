@@ -415,21 +415,19 @@ func TestNewNode(t *testing.T) {
 }
 
 func TestNewTree(t *testing.T) {
-	tree := NewTree(nil, nil)
+	tree := NewTree(nil)
 	verifyInitialState(t, tree)
 	assert.False(t, tree.options.EnableHashSorting)
-	assert.False(t, tree.options.DisableHashLeaves)
 }
 
 func TestNewTreeWithOpts(t *testing.T) {
-	tree := NewTreeWithOpts(TreeOptions{EnableHashSorting: true, DisableHashLeaves: true}, nil, nil)
+	tree := NewTreeWithOpts(TreeOptions{EnableHashSorting: true}, nil)
 	verifyInitialState(t, tree)
 	assert.True(t, tree.options.EnableHashSorting)
-	assert.True(t, tree.options.DisableHashLeaves)
 }
 
 func TestTreeUngenerated(t *testing.T) {
-	tree := NewTree(NewSimpleHash(), NewSimpleHash())
+	tree := NewTree(NewSimpleHash())
 	// If data is nil, it should handle that:
 	err := tree.generate(nil)
 	assert.NotNil(t, err)
@@ -442,7 +440,7 @@ func TestTreeUngenerated(t *testing.T) {
 
 func TestTreeGenerate(t *testing.T) {
 	h := NewSimpleHash()
-	tree := NewTree(h, h)
+	tree := NewTree(h)
 	// Setup some dummy data
 	blockCount := 13
 	blockSize := 16
@@ -461,9 +459,10 @@ func TestTreeGenerate(t *testing.T) {
 
 func TestTree_GenerateSingleLeaf(t *testing.T) {
 	h := sha256.New()
-	items := [][]byte{[]byte("alpha")}
+	alphaHash := sha256.Sum256([]byte("alpha"))
+	items := [][]byte{alphaHash[:]}
 
-	treeHashedLeaves := NewTree(h, h)
+	treeHashedLeaves := NewTree(h)
 	err := treeHashedLeaves.generate(items)
 	assert.Nil(t, err)
 
@@ -473,29 +472,12 @@ func TestTree_GenerateSingleLeaf(t *testing.T) {
 	assert.Equal(t, calcHash, treeHashedLeaves.root().Hash)
 }
 
-func TestTreeGenerate_DisableHashLeaves(t *testing.T) {
-	h := sha256.New()
-	items := [][]byte{[]byte("alpha"), []byte("beta")}
-	alpha := sha256.Sum256(items[0])
-	beta := sha256.Sum256(items[1])
-	items_hashed := [][]byte{alpha[:32], beta[:32]}
-
-	treeHashedLeaves := NewTree(h, h)
-	err := treeHashedLeaves.generate(items)
-	assert.Nil(t, err)
-
-	tree := NewTreeWithOpts(TreeOptions{false, true}, h, h)
-	err = tree.generate(items_hashed)
-	assert.Nil(t, err)
-	assert.Equal(t, tree.root().Hash, treeHashedLeaves.root().Hash)
-}
-
-func TestTreeGenerate_DisableHashLeaves_DynamicLeafLengths(t *testing.T) {
+func TestTreeGenerate_DynamicLeafLengths(t *testing.T) {
 	alpha := sha256.Sum256([]byte("alpha"))
 	beta := md5.Sum([]byte("beta"))
 	items := [][]byte{alpha[:], beta[:]}
 
-	tree := NewTreeWithOpts(TreeOptions{false, true}, sha256.New(), sha256.New())
+	tree := NewTreeWithOpts(TreeOptions{false}, sha256.New())
 	err := tree.generate(items)
 	assert.Nil(t, err)
 
@@ -505,12 +487,12 @@ func TestTreeGenerate_DisableHashLeaves_DynamicLeafLengths(t *testing.T) {
 	assert.Equal(t, expectedHash[:], tree.root().Hash[:])
 }
 
-func TestTreeGenerate_DisableHashLeaves_DynamicLeafLengths_EnableHashSorting(t *testing.T) {
+func TestTreeGenerate_DynamicLeafLengths_EnableHashSorting(t *testing.T) {
 	alpha := sha256.Sum256([]byte("alpha"))
 	beta := md5.Sum([]byte("beta"))
 	items := [][]byte{beta[:], alpha[:]}
 
-	tree := NewTreeWithOpts(TreeOptions{true, true}, sha256.New(), sha256.New())
+	tree := NewTreeWithOpts(TreeOptions{true}, sha256.New())
 	err := tree.generate(items)
 	assert.Nil(t, err)
 
@@ -520,13 +502,13 @@ func TestTreeGenerate_DisableHashLeaves_DynamicLeafLengths_EnableHashSorting(t *
 	assert.Equal(t, expectedHash[:], tree.root().Hash[:])
 }
 
-func TestTreeGenerate_DisableHashLeaves_RightNil(t *testing.T) {
+func TestTreeGenerate_RightNil(t *testing.T) {
 	a := md5.Sum([]byte("a"))
 	b := md5.Sum([]byte("b"))
 	c := md5.Sum([]byte("c"))
 	items := [][]byte{a[:], b[:], c[:], nil}
 
-	tree := NewTreeWithOpts(TreeOptions{false, true}, sha256.New(), sha256.New())
+	tree := NewTreeWithOpts(TreeOptions{false}, sha256.New())
 	err := tree.generate(items)
 	assert.Nil(t, err)
 
@@ -540,7 +522,7 @@ func TestTreeGenerate_DisableHashLeaves_RightNil(t *testing.T) {
 
 func TestGenerateNodeHashOfUnbalance(t *testing.T) {
 	h := NewSimpleHash()
-	tree := NewTree(h, h)
+	tree := NewTree(h)
 	tree.options.EnableHashSorting = true
 
 	sampleLeft := []byte{203, 225, 206, 227, 57, 204, 31, 188, 40, 131, 158, 32, 174, 43, 15, 187, 176, 223, 90, 55, 162, 35, 25, 177, 219, 173, 93, 54, 138, 119, 188, 56}
@@ -551,7 +533,7 @@ func TestGenerateNodeHashOfUnbalance(t *testing.T) {
 
 func TestGenerateNodeHashOrdered(t *testing.T) {
 	h := NewSimpleHash()
-	tree := NewTree(h, h)
+	tree := NewTree(h)
 	tree.options.EnableHashSorting = true
 
 	sampleLeft := []byte{203, 225, 206, 227, 57, 204, 31, 188, 40, 131, 158, 32, 174, 43, 15, 187, 176, 223, 90, 55, 162, 35, 25, 177, 219, 173, 93, 54, 138, 119, 188, 56}
@@ -569,7 +551,7 @@ func TestGenerateNodeHashOrdered(t *testing.T) {
 
 func TestGenerateNodeHashStandard(t *testing.T) {
 	h := NewSimpleHash()
-	tree := NewTree(h, h)
+	tree := NewTree(h)
 	sampleLeft := []byte{203, 225, 206, 227, 57, 204, 31, 188, 40, 131, 158, 32, 174, 43, 15, 187, 176, 223, 90, 55, 162, 35, 25, 177, 219, 173, 93, 54, 138, 119, 188, 56}
 	sampleRight := []byte{193, 201, 112, 48, 157, 84, 238, 81, 120, 81, 228, 112, 38, 213, 168, 50, 37, 170, 137, 211, 44, 177, 75, 68, 152, 252, 54, 145, 145, 146, 154, 136}
 
@@ -585,7 +567,7 @@ func TestGenerateNodeHashStandard(t *testing.T) {
 
 func TestHashOrderedTreeGenerate(t *testing.T) {
 	h := NewSimpleHash()
-	tree := NewTree(h, h)
+	tree := NewTree(h)
 	tree.options.EnableHashSorting = true
 	// Setup some dummy data
 	blockCount := 13
@@ -604,7 +586,7 @@ func TestHashOrderedTreeGenerate(t *testing.T) {
 }
 
 func TestGenerateFailedHash(t *testing.T) {
-	tree := NewTree(NewSimpleHash(), NewFailingHash())
+	tree := NewTree(NewFailingHash())
 	data := createDummyTreeData(16, 16, true)
 	// Fail hash during the leaf generation
 	err := tree.generate(data)
@@ -613,7 +595,7 @@ func TestGenerateFailedHash(t *testing.T) {
 
 	// Fail hash during internal node generation
 	data = createDummyTreeData(16, 16, true)
-	tree = NewTree(NewFailingHashAt(7), NewSimpleHash())
+	tree = NewTree(NewFailingHashAt(7))
 	err = tree.generate(data)
 	assert.NotNil(t, err)
 	assert.Equal(t, err.Error(), "Failed to write hash")
@@ -622,7 +604,7 @@ func TestGenerateFailedHash(t *testing.T) {
 func TestGetNodesAtHeight(t *testing.T) {
 	// ungenerate tree should return nil
 	h := NewSimpleHash()
-	tree := NewTree(h, h)
+	tree := NewTree(h)
 	assert.Nil(t, tree.getNodesAtHeight(1))
 
 	count := 15
@@ -650,9 +632,7 @@ func simpleMerkle(data [][]byte) []byte {
 	// Build the leaves
 	h0 := make([][]byte, len(data))
 	for i, b := range data {
-		h.Reset()
-		h.Write(b)
-		h0[i] = h.Sum(nil)
+		h0[i] = b
 	}
 
 	h1 := make([][]byte, (len(h0)+len(h0)%2)/2)
@@ -682,7 +662,7 @@ func TestRootHashValue(t *testing.T) {
 	// Check the root hash made by Tree against a simpler implementation
 	// that finds only the root hash
 	h := sha256.New()
-	tree := NewTree(h, h)
+	tree := NewTree(h)
 	// Setup some dummy data
 	blockCount := 16
 	blockSize := 16
@@ -702,7 +682,7 @@ func TestRootHashValue(t *testing.T) {
 /* Benchmarks */
 
 func generateBenchmark(b *testing.B, data [][]byte, hashf hash.Hash) {
-	tree := NewTree(hashf, hashf)
+	tree := NewTree(hashf)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		tree.generate(data)
@@ -759,10 +739,9 @@ func Example_complete() {
 
 	treeOptions := TreeOptions{
 		EnableHashSorting: false,
-		DisableHashLeaves: false,
 	}
 
-	tree := NewTreeWithOpts(treeOptions, md5.New(), md5.New())
+	tree := NewTreeWithOpts(treeOptions, md5.New())
 	err := tree.generate(items)
 	if err != nil {
 		fmt.Println(err)
