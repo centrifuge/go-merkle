@@ -416,14 +416,14 @@ func TestNewNode(t *testing.T) {
 
 func TestNewTree(t *testing.T) {
 	tree := NewTree(nil, nil)
-	verifyInitialState(t, &tree)
+	verifyInitialState(t, tree)
 	assert.False(t, tree.options.EnableHashSorting)
 	assert.False(t, tree.options.DisableHashLeaves)
 }
 
 func TestNewTreeWithOpts(t *testing.T) {
 	tree := NewTreeWithOpts(TreeOptions{EnableHashSorting: true, DisableHashLeaves: true}, nil, nil)
-	verifyInitialState(t, &tree)
+	verifyInitialState(t, tree)
 	assert.True(t, tree.options.EnableHashSorting)
 	assert.True(t, tree.options.DisableHashLeaves)
 }
@@ -451,7 +451,7 @@ func TestTreeGenerate(t *testing.T) {
 	// generate the tree
 	err := tree.generate(data)
 	assert.Nil(t, err)
-	verifyGeneratedTree(t, &tree, h)
+	verifyGeneratedTree(t, tree, h)
 
 	// Generating with no blocks should return error
 	err = tree.generate(make([][]byte, 0, 1))
@@ -595,7 +595,7 @@ func TestHashOrderedTreeGenerate(t *testing.T) {
 	// generate the tree
 	err := tree.generate(data)
 	assert.Nil(t, err)
-	verifyGeneratedTree(t, &tree, h)
+	verifyGeneratedTree(t, tree, h)
 
 	// Generating with no blocks should return error
 	err = tree.generate(make([][]byte, 0, 1))
@@ -629,7 +629,7 @@ func TestGetNodesAtHeight(t *testing.T) {
 	size := 16
 	data := createDummyTreeData(count, size, true)
 	tree.generate(data)
-	verifyGeneratedTree(t, &tree, h)
+	verifyGeneratedTree(t, tree, h)
 
 	// invalid height should return nil
 	assert.Nil(t, tree.getNodesAtHeight(0))
@@ -691,7 +691,7 @@ func TestRootHashValue(t *testing.T) {
 	// generate the tree
 	err := tree.generate(data)
 	assert.Nil(t, err)
-	verifyGeneratedTree(t, &tree, h)
+	verifyGeneratedTree(t, tree, h)
 
 	// Calculate the root hash with the simpler method
 	merk := simpleMerkle(data)

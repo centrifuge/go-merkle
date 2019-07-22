@@ -9,6 +9,7 @@ package merkle
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"hash"
 )
 
@@ -62,14 +63,14 @@ type Tree struct {
 	nonLeafHashFunc hash.Hash
 }
 
-func NewTreeWithOpts(options TreeOptions, leafHashFunc hash.Hash, nonLeafHashFunc hash.Hash) Tree {
+func NewTreeWithOpts(options TreeOptions, leafHashFunc hash.Hash, nonLeafHashFunc hash.Hash) *Tree {
 	tree := NewTree(leafHashFunc, nonLeafHashFunc)
 	tree.options = options
 	return tree
 }
 
-func NewTree(leafHashFunc hash.Hash, nonLeafHashFunc hash.Hash) Tree {
-	return Tree{nodes: nil, levels: nil, leafHashFunc: leafHashFunc, nonLeafHashFunc: nonLeafHashFunc}
+func NewTree(leafHashFunc hash.Hash, nonLeafHashFunc hash.Hash) *Tree {
+	return &Tree{nodes: nil, levels: nil, leafHashFunc: leafHashFunc, nonLeafHashFunc: nonLeafHashFunc}
 }
 
 func (self *Tree) RootHash() []byte {
@@ -165,6 +166,39 @@ func (self *Tree) generate(blocks [][]byte) error {
 	self.nodes = nodes
 	self.levels = levels
 	return nil
+}
+
+func (self *Tree) GetMerkleProof(leafIndex uint) ([]ProofNode, error) {
+	leafCount := len(self.leaves())
+	if leafIndex >= uint(leafCount) {
+		return nil, errors.New("node index is too big for node count")
+	}
+	fmt.Printf("leafindex %d, leafcount %d \n", leafIndex, leafCount)
+	height, _ := calculateHeightAndNodeCount(uint64(leafCount))
+	index := 0
+	lastNodeInLevel := uint64(leafCount) - 1
+	offset := uint64(0)
+	nodes := []ProofNode{}
+
+	for level := height - 1; level > 0; level-- {
+		// only add hash if this isn't an odd end
+		if !(uint64(leafIndex) == lastNodeInLevel && (lastNodeInLevel+1)%2 == 1) {
+			if leafIndex%2 == 0 {
+				fmt.Printf("target index %d\n", offset+uint64(leafIndex)+1)
+				nodes = append(nodes, ProofNode{Left: false, Hash: self.nodes[offset+uint64(leafIndex)+1].Hash})
+
+			} else {
+				fmt.Printf("target index %d\n", offset+uint64(leafIndex)-1)
+				nodes = append(nodes, ProofNode{Left: true, Hash: self.nodes[offset+uint64(leafIndex)-1].Hash})
+			}
+			index++
+		}
+		leafIndex = leafIndex / 2
+		offset += lastNodeInLevel + 1
+		lastNodeInLevel = (lastNodeInLevel+1)/2 + (lastNodeInLevel+1)%2 - 1
+	}
+	return nodes, nil
+
 }
 
 // Creates all the non-leaf nodes for a certain height. The number of nodes
