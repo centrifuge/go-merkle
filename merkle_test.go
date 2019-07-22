@@ -676,6 +676,230 @@ func TestRootHashValue(t *testing.T) {
 	assert.Equal(t, bytes.Equal(tree.root().Hash, merk), true)
 }
 
+func TestGetMerkleProof1(t *testing.T) {
+	h := md5.New()
+	treeData := createDummyTreeData(15, h.Size(), true)
+	tree := NewTree(h)
+	err := tree.Generate(treeData, 0)
+	assert.Nil(t, err)
+
+	inputs := []uint{
+		0,
+		1,
+		2,
+		3,
+		4,
+		5,
+		6,
+		7,
+		12,
+		13,
+		14, // Lone child edge case*/
+	}
+
+	results := [][]ProofNode{
+		// 0, 15
+		[]ProofNode{
+			ProofNode{false, tree.nodes[1].Hash},
+			ProofNode{false, tree.nodes[16].Hash},
+			ProofNode{false, tree.nodes[24].Hash},
+			ProofNode{false, tree.nodes[28].Hash},
+		},
+		// 1, 15
+		[]ProofNode{
+			ProofNode{true, tree.nodes[0].Hash},
+			ProofNode{false, tree.nodes[16].Hash},
+			ProofNode{false, tree.nodes[24].Hash},
+			ProofNode{false, tree.nodes[28].Hash},
+		},
+		// 2, 15
+		[]ProofNode{
+			ProofNode{false, tree.nodes[3].Hash},
+			ProofNode{true, tree.nodes[15].Hash},
+			ProofNode{false, tree.nodes[24].Hash},
+			ProofNode{false, tree.nodes[28].Hash},
+		},
+		// 3, 15
+		[]ProofNode{
+			ProofNode{true, tree.nodes[2].Hash},
+			ProofNode{true, tree.nodes[15].Hash},
+			ProofNode{false, tree.nodes[24].Hash},
+			ProofNode{false, tree.nodes[28].Hash},
+		},
+		// 4, 15
+		[]ProofNode{
+			ProofNode{false, tree.nodes[5].Hash},
+			ProofNode{false, tree.nodes[18].Hash},
+			ProofNode{true, tree.nodes[23].Hash},
+			ProofNode{false, tree.nodes[28].Hash},
+		},
+		// 5, 15
+		[]ProofNode{
+			ProofNode{true, tree.nodes[4].Hash},
+			ProofNode{false, tree.nodes[18].Hash},
+			ProofNode{true, tree.nodes[23].Hash},
+			ProofNode{false, tree.nodes[28].Hash},
+		},
+		// 6, 15
+		[]ProofNode{
+			ProofNode{false, tree.nodes[7].Hash},
+			ProofNode{true, tree.nodes[17].Hash},
+			ProofNode{true, tree.nodes[23].Hash},
+			ProofNode{false, tree.nodes[28].Hash},
+		},
+		// 7, 15
+		[]ProofNode{
+			ProofNode{true, tree.nodes[6].Hash},
+			ProofNode{true, tree.nodes[17].Hash},
+			ProofNode{true, tree.nodes[23].Hash},
+			ProofNode{false, tree.nodes[28].Hash},
+		},
+		// 12, 15
+		[]ProofNode{
+			ProofNode{false, tree.nodes[13].Hash},
+			ProofNode{false, tree.nodes[22].Hash},
+			ProofNode{true, tree.nodes[25].Hash},
+			ProofNode{true, tree.nodes[27].Hash},
+		},
+		// 13, 15
+		[]ProofNode{
+			ProofNode{true, tree.nodes[12].Hash},
+			ProofNode{false, tree.nodes[22].Hash},
+			ProofNode{true, tree.nodes[25].Hash},
+			ProofNode{true, tree.nodes[27].Hash},
+		},
+		// 14, 15
+		[]ProofNode{
+			ProofNode{true, tree.nodes[21].Hash},
+			ProofNode{true, tree.nodes[25].Hash},
+			ProofNode{true, tree.nodes[27].Hash},
+		},
+	}
+
+	for i, input := range inputs {
+		r, _ := tree.GetMerkleProof(input)
+		assert.Equal(t,
+			len(results[i]),
+			len(r),
+			fmt.Sprintf("GetMerkleProof(%d), Result Length Mismatch", input))
+
+		for j, n := range r {
+			assert.Equal(t,
+				results[i][j].Left,
+				n.Left,
+				fmt.Sprintf("GetMerkleProof(%d), node #: %d, %t", input, j, results[i][j].Left))
+
+			assert.Equal(t,
+				results[i][j].Hash,
+				n.Hash,
+				fmt.Sprintf("GetMerkleProof(%d) hash %d was leaf %d expected %d", input, j, n.Hash, results[i][j].Hash))
+		}
+	}
+
+}
+
+func TestGetMerkleProof2(t *testing.T) {
+	// 15, 16
+	h := md5.New()
+	treeData := createDummyTreeData(16, h.Size(), true)
+	tree := NewTree(h)
+	err := tree.Generate(treeData, 0)
+	assert.Nil(t, err)
+
+	result := []ProofNode{
+		ProofNode{true, tree.nodes[14].Hash},
+		ProofNode{true, tree.nodes[22].Hash},
+		ProofNode{true, tree.nodes[26].Hash},
+		ProofNode{true, tree.nodes[28].Hash},
+	}
+	proof, err := tree.GetMerkleProof(15)
+	assert.Equal(t, result, proof)
+
+	//0 , 2
+	treeData = createDummyTreeData(2, h.Size(), true)
+	tree = NewTree(h)
+	err = tree.Generate(treeData, 0)
+	assert.Nil(t, err)
+	result = []ProofNode{
+		ProofNode{false, tree.nodes[1].Hash},
+	}
+	proof, err = tree.GetMerkleProof(0)
+	assert.Equal(t, result, proof)
+
+	// 4 Leaf Tree:
+	//       6
+	//   4       5
+	// 0   1   2   3
+	//
+	// 0, 4
+	treeData = createDummyTreeData(4, h.Size(), true)
+	tree = NewTree(h)
+	err = tree.Generate(treeData, 0)
+	assert.Nil(t, err)
+	result = []ProofNode{
+
+		ProofNode{false, tree.nodes[1].Hash},
+		ProofNode{false, tree.nodes[5].Hash},
+	}
+	proof, err = tree.GetMerkleProof(0)
+	assert.Equal(t, result, proof)
+
+	// 3 Leaf Tree:
+	//     5
+	//   3    4 (2)
+	// 0   1   2
+	//
+	// 2, 3
+	treeData = createDummyTreeData(3, h.Size(), true)
+	tree = NewTree(h)
+	err = tree.Generate(treeData, 0)
+	assert.Nil(t, err)
+	result = []ProofNode{
+		ProofNode{true, tree.nodes[3].Hash},
+	}
+	proof, err = tree.GetMerkleProof(2)
+	assert.Equal(t, result, proof)
+
+	// 5 Leaf Tree:
+	//             8
+	//        8        9 (4)
+	//   5       6     7 (4)
+	// 0   1   2   3   4
+	//
+	// 2, 5
+
+	treeData = createDummyTreeData(5, h.Size(), true)
+	tree = NewTree(h)
+	err = tree.Generate(treeData, 0)
+	assert.Nil(t, err)
+	result = []ProofNode{
+		ProofNode{false, tree.nodes[3].Hash},
+		ProofNode{true, tree.nodes[5].Hash},
+		ProofNode{false, tree.nodes[9].Hash},
+	}
+	proof, err = tree.GetMerkleProof(2)
+	assert.Equal(t, result, proof)
+
+	// 7 Leaf Tree:
+	//               14
+	//        11              12
+	//   7       8       9     10 (6)
+	// 0   1   2   3   4   5   6
+	//
+	// 6, 7
+
+	treeData = createDummyTreeData(7, h.Size(), true)
+	tree = NewTree(h)
+	err = tree.Generate(treeData, 0)
+	assert.Nil(t, err)
+	result = []ProofNode{
+		ProofNode{true, tree.nodes[9].Hash},
+		ProofNode{true, tree.nodes[11].Hash},
+	}
+	proof, err = tree.GetMerkleProof(6)
+	assert.Equal(t, result, proof)
+}
+
 /* Benchmarks */
 
 func generateBenchmark(b *testing.B, data [][]byte, hashf hash.Hash) {

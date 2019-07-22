@@ -8,8 +8,8 @@ package merkle
 type Hash []byte
 
 type ProofNode struct {
-	Hash []byte
 	Left bool
+	Hash []byte
 }
 
 type MerkleTree interface {
