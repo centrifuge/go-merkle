@@ -18,7 +18,6 @@ type SMT struct {
 	emptyTreeRootHash     []Hash
 	treeHeight            int
 	countOfNonEmptyLeaves int
-	filled                bool
 }
 
 func NewSMT(emptyHash Hash, hashFunc hash.Hash) *SMT {
@@ -26,7 +25,7 @@ func NewSMT(emptyHash Hash, hashFunc hash.Hash) *SMT {
 }
 
 func (self *SMT) RootHash() []byte {
-	if !self.filled {
+	if len(self.fullNodes) == 0 {
 		return nil
 	}
 	if self.countOfNonEmptyLeaves == 0 {
@@ -36,7 +35,7 @@ func (self *SMT) RootHash() []byte {
 }
 
 func (self *SMT) Generate(leaves [][]byte, totalSize int) error {
-	if self.filled {
+	if len(self.fullNodes) != 0 {
 		return errors.New("SMT tree already filled")
 	}
 	if !isPowerOfTwo(uint64(totalSize)) {
@@ -69,13 +68,12 @@ func (self *SMT) Generate(leaves [][]byte, totalSize int) error {
 	if err != nil {
 		return err
 	}
-	self.filled = true
 	return nil
 }
 
 // Leaf mumber begins with 0
 func (self *SMT) GetMerkleProof(leafNo uint) ([]ProofNode, error) {
-	if !self.filled {
+	if len(self.fullNodes) == 0 {
 		return nil, errors.New("SMT tree is not filled")
 	}
 

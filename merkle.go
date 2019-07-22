@@ -63,6 +63,83 @@ func (self *Tree) RootHash() []byte {
 	}
 }
 
+// Generates the tree nodes by using different hash funtions between internal and leaf node
+func (self *Tree) Generate(blocks [][]byte, totalLeavesSize int) error {
+	return self.generate(blocks)
+}
+func (self *Tree) generate(blocks [][]byte) error {
+	blockCount := uint64(len(blocks))
+	if blockCount == 0 {
+		return errors.New("Empty tree")
+	}
+	height, nodeCount := calculateHeightAndNodeCount(blockCount)
+	levels := make([][]Node, height)
+	nodes := make([]Node, nodeCount)
+
+	// Create the leaf nodes
+	for i, block := range blocks {
+		node, err := NewNode(nil, block)
+		if err != nil {
+			return err
+		}
+		nodes[i] = node
+	}
+	levels[height-1] = nodes[:len(blocks)]
+
+	// Create each node level
+	current := nodes[len(blocks):]
+	h := height - 1
+	for ; h > 0; h-- {
+		below := levels[h]
+		wrote, err := self.generateNodeLevel(below, current)
+		if err != nil {
+			return err
+		}
+		levels[h-1] = current[:wrote]
+		current = current[wrote:]
+	}
+
+	self.nodes = nodes
+	self.levels = levels
+	return nil
+}
+
+func (self *Tree) GetMerkleProof(leafIndex uint) ([]ProofNode, error) {
+	leafCount := len(self.leaves())
+	if leafCount == 0 {
+		return nil, errors.New("SMT tree is not filled")
+	}
+
+	if leafIndex >= uint(leafCount) {
+		return nil, errors.New("node index is too big for node count")
+	}
+	height, _ := calculateHeightAndNodeCount(uint64(leafCount))
+	index := 0
+	lastNodeInLevel := uint64(leafCount) - 1
+	offset := uint64(0)
+	nodes := []ProofNode{}
+
+	for level := height - 1; level > 0; level-- {
+		// only add hash if this isn't an odd end
+		if !(uint64(leafIndex) == lastNodeInLevel && (lastNodeInLevel+1)%2 == 1) {
+			if leafIndex%2 == 0 {
+				nodes = append(nodes, ProofNode{Left: false, Hash: self.nodes[offset+uint64(leafIndex)+1].Hash})
+
+			} else {
+				nodes = append(nodes, ProofNode{Left: true, Hash: self.nodes[offset+uint64(leafIndex)-1].Hash})
+			}
+			index++
+		}
+		leafIndex = leafIndex / 2
+		offset += lastNodeInLevel + 1
+		lastNodeInLevel = (lastNodeInLevel+1)/2 + (lastNodeInLevel+1)%2 - 1
+	}
+	return nodes, nil
+
+}
+
+// Following are non public
+
 // Returns a slice of the leaf nodes in the tree, if available, else nil
 func (self *Tree) leaves() []Node {
 	if self.levels == nil {
@@ -96,89 +173,6 @@ func (self *Tree) getNodesAtHeight(h uint64) []Node {
 // Returns the height of this tree
 func (self *Tree) height() uint64 {
 	return uint64(len(self.levels))
-}
-
-/*
-func (self *Tree) Generate(blocks [][]byte, hashf hash.Hash) error {
-	return self.GenerateByTwoHashFunc(blocks, hashf, hashf)
-}
-*/
-// Generates the tree nodes by using different hash funtions between internal and leaf node
-func (self *Tree) Generate(blocks [][]byte, totalLeavesSize int) error {
-	return self.generate(blocks)
-}
-func (self *Tree) generate(blocks [][]byte) error {
-	blockCount := uint64(len(blocks))
-	if blockCount == 0 {
-		return errors.New("Empty tree")
-	}
-	height, nodeCount := calculateHeightAndNodeCount(blockCount)
-	levels := make([][]Node, height)
-	nodes := make([]Node, nodeCount)
-
-	// Create the leaf nodes
-	for i, block := range blocks {
-		/*	var node Node
-				var err error
-				if self.options.DisableHashLeaves {
-					node, err = NewNode(nil, block)
-				} else {
-					node, err = NewNode(self.leafHashFunc, block)
-		    }*/
-		node, err := NewNode(nil, block)
-		if err != nil {
-			return err
-		}
-		nodes[i] = node
-	}
-	levels[height-1] = nodes[:len(blocks)]
-
-	// Create each node level
-	current := nodes[len(blocks):]
-	h := height - 1
-	for ; h > 0; h-- {
-		below := levels[h]
-		wrote, err := self.generateNodeLevel(below, current)
-		if err != nil {
-			return err
-		}
-		levels[h-1] = current[:wrote]
-		current = current[wrote:]
-	}
-
-	self.nodes = nodes
-	self.levels = levels
-	return nil
-}
-
-func (self *Tree) GetMerkleProof(leafIndex uint) ([]ProofNode, error) {
-	leafCount := len(self.leaves())
-	if leafIndex >= uint(leafCount) {
-		return nil, errors.New("node index is too big for node count")
-	}
-	height, _ := calculateHeightAndNodeCount(uint64(leafCount))
-	index := 0
-	lastNodeInLevel := uint64(leafCount) - 1
-	offset := uint64(0)
-	nodes := []ProofNode{}
-
-	for level := height - 1; level > 0; level-- {
-		// only add hash if this isn't an odd end
-		if !(uint64(leafIndex) == lastNodeInLevel && (lastNodeInLevel+1)%2 == 1) {
-			if leafIndex%2 == 0 {
-				nodes = append(nodes, ProofNode{Left: false, Hash: self.nodes[offset+uint64(leafIndex)+1].Hash})
-
-			} else {
-				nodes = append(nodes, ProofNode{Left: true, Hash: self.nodes[offset+uint64(leafIndex)-1].Hash})
-			}
-			index++
-		}
-		leafIndex = leafIndex / 2
-		offset += lastNodeInLevel + 1
-		lastNodeInLevel = (lastNodeInLevel+1)/2 + (lastNodeInLevel+1)%2 - 1
-	}
-	return nodes, nil
-
 }
 
 // Creates all the non-leaf nodes for a certain height. The number of nodes
