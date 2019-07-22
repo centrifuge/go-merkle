@@ -655,6 +655,14 @@ func simpleMerkle(data [][]byte) []byte {
 	return h1[0]
 }
 
+func TestEmptyTree(t *testing.T) {
+	h := sha256.New()
+	tree := NewTree(h)
+	_, err := tree.GetMerkleProof(0)
+	assert.Equal(t, err.Error(), "Tree is empty")
+	assert.Nil(t, tree.RootHash())
+}
+
 func TestRootHashValue(t *testing.T) {
 	// Check the root hash made by Tree against a simpler implementation
 	// that finds only the root hash
@@ -673,7 +681,7 @@ func TestRootHashValue(t *testing.T) {
 	// Calculate the root hash with the simpler method
 	merk := simpleMerkle(data)
 
-	assert.Equal(t, bytes.Equal(tree.root().Hash, merk), true)
+	assert.Equal(t, bytes.Equal(tree.RootHash(), merk), true)
 }
 
 func TestGetMerkleProof1(t *testing.T) {
@@ -898,6 +906,18 @@ func TestGetMerkleProof2(t *testing.T) {
 	}
 	proof, err = tree.GetMerkleProof(6)
 	assert.Equal(t, result, proof)
+}
+
+func TestGetMerkleProof3(t *testing.T) {
+	// 16, 16
+	h := md5.New()
+	treeData := createDummyTreeData(16, h.Size(), true)
+	tree := NewTree(h)
+	err := tree.Generate(treeData, 0)
+	assert.Nil(t, err)
+
+	_, err = tree.GetMerkleProof(16)
+	assert.Equal(t, err.Error(), "node index is too big for node count")
 }
 
 /* Benchmarks */
