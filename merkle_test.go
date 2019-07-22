@@ -417,13 +417,13 @@ func TestNewNode(t *testing.T) {
 func TestNewTree(t *testing.T) {
 	tree := NewTree(nil)
 	verifyInitialState(t, tree)
-	assert.False(t, tree.options.EnableHashSorting)
+	assert.False(t, tree.enableHashSorting)
 }
 
-func TestNewTreeWithOpts(t *testing.T) {
-	tree := NewTreeWithOpts(TreeOptions{EnableHashSorting: true}, nil)
+func TestNewTreeWithHashSortingEnable(t *testing.T) {
+	tree := NewTreeWithHashSortingEnable(nil)
 	verifyInitialState(t, tree)
-	assert.True(t, tree.options.EnableHashSorting)
+	assert.True(t, tree.enableHashSorting)
 }
 
 func TestTreeUngenerated(t *testing.T) {
@@ -477,7 +477,7 @@ func TestTreeGenerate_DynamicLeafLengths(t *testing.T) {
 	beta := md5.Sum([]byte("beta"))
 	items := [][]byte{alpha[:], beta[:]}
 
-	tree := NewTreeWithOpts(TreeOptions{false}, sha256.New())
+	tree := NewTree(sha256.New())
 	err := tree.generate(items)
 	assert.Nil(t, err)
 
@@ -492,7 +492,7 @@ func TestTreeGenerate_DynamicLeafLengths_EnableHashSorting(t *testing.T) {
 	beta := md5.Sum([]byte("beta"))
 	items := [][]byte{beta[:], alpha[:]}
 
-	tree := NewTreeWithOpts(TreeOptions{true}, sha256.New())
+	tree := NewTreeWithHashSortingEnable(sha256.New())
 	err := tree.generate(items)
 	assert.Nil(t, err)
 
@@ -508,7 +508,7 @@ func TestTreeGenerate_RightNil(t *testing.T) {
 	c := md5.Sum([]byte("c"))
 	items := [][]byte{a[:], b[:], c[:], nil}
 
-	tree := NewTreeWithOpts(TreeOptions{false}, sha256.New())
+	tree := NewTree(sha256.New())
 	err := tree.generate(items)
 	assert.Nil(t, err)
 
@@ -522,8 +522,7 @@ func TestTreeGenerate_RightNil(t *testing.T) {
 
 func TestGenerateNodeHashOfUnbalance(t *testing.T) {
 	h := NewSimpleHash()
-	tree := NewTree(h)
-	tree.options.EnableHashSorting = true
+	tree := NewTreeWithHashSortingEnable(h)
 
 	sampleLeft := []byte{203, 225, 206, 227, 57, 204, 31, 188, 40, 131, 158, 32, 174, 43, 15, 187, 176, 223, 90, 55, 162, 35, 25, 177, 219, 173, 93, 54, 138, 119, 188, 56}
 	n, err := tree.generateNode(sampleLeft, nil)
@@ -533,8 +532,7 @@ func TestGenerateNodeHashOfUnbalance(t *testing.T) {
 
 func TestGenerateNodeHashOrdered(t *testing.T) {
 	h := NewSimpleHash()
-	tree := NewTree(h)
-	tree.options.EnableHashSorting = true
+	tree := NewTreeWithHashSortingEnable(h)
 
 	sampleLeft := []byte{203, 225, 206, 227, 57, 204, 31, 188, 40, 131, 158, 32, 174, 43, 15, 187, 176, 223, 90, 55, 162, 35, 25, 177, 219, 173, 93, 54, 138, 119, 188, 56}
 	sampleRight := []byte{193, 201, 112, 48, 157, 84, 238, 81, 120, 81, 228, 112, 38, 213, 168, 50, 37, 170, 137, 211, 44, 177, 75, 68, 152, 252, 54, 145, 145, 146, 154, 136}
@@ -567,8 +565,7 @@ func TestGenerateNodeHashStandard(t *testing.T) {
 
 func TestHashOrderedTreeGenerate(t *testing.T) {
 	h := NewSimpleHash()
-	tree := NewTree(h)
-	tree.options.EnableHashSorting = true
+	tree := NewTreeWithHashSortingEnable(h)
 	// Setup some dummy data
 	blockCount := 13
 	blockSize := 16
@@ -737,11 +734,7 @@ func BenchmarkGenerate_1GB_2MB_SHA256(b *testing.B) {
 func Example_complete() {
 	items := [][]byte{[]byte("alpha"), []byte("beta"), []byte("gamma"), []byte("delta"), []byte("epsilon")}
 
-	treeOptions := TreeOptions{
-		EnableHashSorting: false,
-	}
-
-	tree := NewTreeWithOpts(treeOptions, md5.New())
+	tree := NewTree(md5.New())
 	err := tree.generate(items)
 	if err != nil {
 		fmt.Println(err)

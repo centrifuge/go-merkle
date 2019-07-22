@@ -9,22 +9,8 @@ package merkle
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"hash"
 )
-
-// TreeOptions configures tree behavior
-type TreeOptions struct {
-	// EnableHashSorting modifies the tree's hash behavior to sort the hashes before concatenating them
-	// to calculate the parent hash. This removes the capability of proving the position in the tree but
-	// simplifies the proof format by removing the need to specify left/right.
-	EnableHashSorting bool
-
-	// DisableHashLeaves determines whether leaf nodes should be hashed or not. By disabling this behavior,
-	// you can use a different hash function for leaves or generate a tree that contains already hashed
-	// values.
-	//DisableHashLeaves bool
-}
 
 // Node in the merkle tree
 type Node struct {
@@ -56,16 +42,13 @@ type Tree struct {
 	nodes []Node
 	// Points to each level in the node. The first level contains the root node
 	levels [][]Node
-	// Any particular behavior changing option
-	options TreeOptions
 
-	hashFunc hash.Hash
+	enableHashSorting bool
+	hashFunc          hash.Hash
 }
 
-func NewTreeWithOpts(options TreeOptions, hashFunc hash.Hash) *Tree {
-	tree := NewTree(hashFunc)
-	tree.options = options
-	return tree
+func NewTreeWithHashSortingEnable(hashFunc hash.Hash) *Tree {
+	return &Tree{nodes: nil, levels: nil, enableHashSorting: true, hashFunc: hashFunc}
 }
 
 func NewTree(hashFunc hash.Hash) *Tree {
@@ -173,7 +156,6 @@ func (self *Tree) GetMerkleProof(leafIndex uint) ([]ProofNode, error) {
 	if leafIndex >= uint(leafCount) {
 		return nil, errors.New("node index is too big for node count")
 	}
-	fmt.Printf("leafindex %d, leafcount %d \n", leafIndex, leafCount)
 	height, _ := calculateHeightAndNodeCount(uint64(leafCount))
 	index := 0
 	lastNodeInLevel := uint64(leafCount) - 1
@@ -184,11 +166,9 @@ func (self *Tree) GetMerkleProof(leafIndex uint) ([]ProofNode, error) {
 		// only add hash if this isn't an odd end
 		if !(uint64(leafIndex) == lastNodeInLevel && (lastNodeInLevel+1)%2 == 1) {
 			if leafIndex%2 == 0 {
-				fmt.Printf("target index %d\n", offset+uint64(leafIndex)+1)
 				nodes = append(nodes, ProofNode{Left: false, Hash: self.nodes[offset+uint64(leafIndex)+1].Hash})
 
 			} else {
-				fmt.Printf("target index %d\n", offset+uint64(leafIndex)-1)
 				nodes = append(nodes, ProofNode{Left: true, Hash: self.nodes[offset+uint64(leafIndex)-1].Hash})
 			}
 			index++
@@ -242,7 +222,7 @@ func (self *Tree) generateNode(left, right []byte) (Node, error) {
 	}
 
 	data := make([]byte, len(left)+len(right))
-	if self.options.EnableHashSorting && bytes.Compare(left, right) > 0 {
+	if self.enableHashSorting && bytes.Compare(left, right) > 0 {
 		copy(data[:len(right)], right)
 		copy(data[len(right):], left)
 	} else {
