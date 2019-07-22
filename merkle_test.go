@@ -152,9 +152,9 @@ func TestCalculateTreeHeight(t *testing.T) {
 		if r != i[1] {
 			failNotEqual(t, "calculateTreeHeight", i[0], i[1], r)
 		}
-		r, _ = CalculateHeightAndNodeCount(i[0])
+		r, _ = calculateHeightAndNodeCount(i[0])
 		if r != i[1] {
-			failNotEqual(t, "CalculateHeightAndNodeCount", i[0], i[1], r)
+			failNotEqual(t, "calculateHeightAndNodeCount", i[0], i[1], r)
 		}
 	}
 }
@@ -219,9 +219,9 @@ func TestCalculateNodeCount(t *testing.T) {
 		if r != i[1] {
 			failNotEqual(t, "calculateNodeCount", i[0], i[1], r)
 		}
-		_, r = CalculateHeightAndNodeCount(i[0])
+		_, r = calculateHeightAndNodeCount(i[0])
 		if r != i[1] {
-			failNotEqual(t, "CalculateHeightAndNodeCount", i[0], i[1], r)
+			failNotEqual(t, "calculateHeightAndNodeCount", i[0], i[1], r)
 		}
 	}
 }
@@ -312,21 +312,21 @@ func verifyGeneratedTree(t *testing.T, tree *Tree, h hash.Hash) {
 	/* Given a generated tree, confirm its state is correct */
 
 	// Nodes should have been created
-	assert.NotNil(t, tree.Nodes)
-	assert.Equal(t, len(tree.Nodes), cap(tree.Nodes),
-		"tree.Nodes len should equal its cap")
+	assert.NotNil(t, tree.nodes)
+	assert.Equal(t, len(tree.nodes), cap(tree.nodes),
+		"tree.nodes len should equal its cap")
 
 	// The leaves should not have children
-	for _, n := range tree.Leaves() {
+	for _, n := range tree.leaves() {
 		assert.Nil(t, n.Left)
 		assert.Nil(t, n.Right)
 	}
 
-	for i := tree.Height() - 1; i > 0; i-- {
+	for i := tree.height() - 1; i > 0; i-- {
 		// All the other nodes should have children, and their children
 		// should be in the deeper level
-		deeper := tree.GetNodesAtHeight(i + 1)
-		row := tree.GetNodesAtHeight(i)
+		deeper := tree.getNodesAtHeight(i + 1)
+		row := tree.getNodesAtHeight(i)
 		for j, n := range row {
 			assert.NotNil(t, n.Left, "Left child should never be nil")
 			assert.Equal(t, n.Left, &deeper[j*2])
@@ -353,7 +353,7 @@ func verifyGeneratedTree(t *testing.T, tree *Tree, h hash.Hash) {
 		assert.Equal(t, len(row), prev/2+prev%2)
 	}
 
-	rootRow := tree.GetNodesAtHeight(1)
+	rootRow := tree.getNodesAtHeight(1)
 	// The root row should exist
 	assert.NotNil(t, rootRow)
 
@@ -362,29 +362,29 @@ func verifyGeneratedTree(t *testing.T, tree *Tree, h hash.Hash) {
 		"The root row should contain only 1 node")
 
 	// the Root() should be the only item in the top row
-	assert.Equal(t, tree.Root(), &rootRow[0],
-		"tree.Root() is not the expected node")
+	assert.Equal(t, tree.root(), &rootRow[0],
+		"tree.root() is not the expected node")
 
 	// Verify Root Hash
-	verifyHashInNode(t, tree, *tree.Root(), h)
+	verifyHashInNode(t, tree, *tree.root(), h)
 
 	// The Leaves() should the deepest row
-	assert.Equal(t, len(tree.Leaves()),
-		len(tree.GetNodesAtHeight(tree.Height())),
-		"tree.Leaves() is not the expected row")
+	assert.Equal(t, len(tree.leaves()),
+		len(tree.getNodesAtHeight(tree.height())),
+		"tree.leaves() is not the expected row")
 }
 
 func verifyHashInNode(t *testing.T, tree *Tree, n Node, h hash.Hash) {
 	/* Given a node it verifies that the Node Hash was calculated correctly */
-	nn, err := tree.generateNode(n.Left.Hash, n.Right.Hash, h)
+	nn, err := tree.generateNode(n.Left.Hash, n.Right.Hash)
 
 	assert.Nil(t, err)
 	assert.Equal(t, nn.Hash, n.Hash, "calculated Hash needs to match generated one")
 }
 
 func verifyInitialState(t *testing.T, tree *Tree) {
-	assert.Nil(t, tree.Nodes)
-	assert.Nil(t, tree.Levels)
+	assert.Nil(t, tree.nodes)
+	assert.Nil(t, tree.levels)
 }
 
 func TestNewNode(t *testing.T) {
@@ -415,119 +415,101 @@ func TestNewNode(t *testing.T) {
 }
 
 func TestNewTree(t *testing.T) {
-	tree := NewTree()
-	verifyInitialState(t, &tree)
-	assert.False(t, tree.Options.EnableHashSorting)
-	assert.False(t, tree.Options.DisableHashLeaves)
+	tree := NewTree(nil)
+	verifyInitialState(t, tree)
+	assert.False(t, tree.enableHashSorting)
 }
 
-func TestNewTreeWithOpts(t *testing.T) {
-	tree := NewTreeWithOpts(TreeOptions{EnableHashSorting: true, DisableHashLeaves: true})
-	verifyInitialState(t, &tree)
-	assert.True(t, tree.Options.EnableHashSorting)
-	assert.True(t, tree.Options.DisableHashLeaves)
+func TestNewTreeWithHashSortingEnable(t *testing.T) {
+	tree := NewTreeWithHashSortingEnable(nil)
+	verifyInitialState(t, tree)
+	assert.True(t, tree.enableHashSorting)
 }
 
 func TestTreeUngenerated(t *testing.T) {
-	tree := Tree{}
+	tree := NewTree(NewSimpleHash())
 	// If data is nil, it should handle that:
-	err := tree.Generate(nil, NewSimpleHash())
+	err := tree.generate(nil)
 	assert.NotNil(t, err)
 	assert.Equal(t, err.Error(), "Empty tree")
-	assert.Nil(t, tree.Leaves())
-	assert.Nil(t, tree.Root())
-	assert.Equal(t, tree.Height(), uint64(0))
-	assert.Nil(t, tree.Nodes)
+	assert.Nil(t, tree.leaves())
+	assert.Nil(t, tree.root())
+	assert.Equal(t, tree.height(), uint64(0))
+	assert.Nil(t, tree.nodes)
 }
 
 func TestTreeGenerate(t *testing.T) {
-	tree := Tree{}
 	h := NewSimpleHash()
+	tree := NewTree(h)
 	// Setup some dummy data
 	blockCount := 13
 	blockSize := 16
 	data := createDummyTreeData(blockCount, blockSize, true)
 
-	// Generate the tree
-	err := tree.Generate(data, h)
+	// generate the tree
+	err := tree.generate(data)
 	assert.Nil(t, err)
-	verifyGeneratedTree(t, &tree, h)
+	verifyGeneratedTree(t, tree, h)
 
 	// Generating with no blocks should return error
-	err = tree.Generate(make([][]byte, 0, 1), h)
+	err = tree.generate(make([][]byte, 0, 1))
 	assert.NotNil(t, err)
 	assert.Equal(t, err.Error(), "Empty tree")
 }
 
 func TestTree_GenerateSingleLeaf(t *testing.T) {
 	h := sha256.New()
-	items := [][]byte{[]byte("alpha")}
+	alphaHash := sha256.Sum256([]byte("alpha"))
+	items := [][]byte{alphaHash[:]}
 
-	treeHashedLeaves := NewTree()
-	err := treeHashedLeaves.Generate(items, h)
+	treeHashedLeaves := NewTree(h)
+	err := treeHashedLeaves.generate(items)
 	assert.Nil(t, err)
 
-	assert.Len(t, treeHashedLeaves.Nodes, 1)
+	assert.Len(t, treeHashedLeaves.nodes, 1)
 
 	calcHash := []byte{0x8e, 0xd3, 0xf6, 0xad, 0x68, 0x5b, 0x95, 0x9e, 0xad, 0x70, 0x22, 0x51, 0x8e, 0x1a, 0xf7, 0x6c, 0xd8, 0x16, 0xf8, 0xe8, 0xec, 0x7c, 0xcd, 0xda, 0x1e, 0xd4, 0x1, 0x8e, 0x8f, 0x22, 0x23, 0xf8}
-	assert.Equal(t, calcHash, treeHashedLeaves.Root().Hash)
+	assert.Equal(t, calcHash, treeHashedLeaves.root().Hash)
 }
 
-func TestTreeGenerate_DisableHashLeaves(t *testing.T) {
-	h := sha256.New()
-	items := [][]byte{[]byte("alpha"), []byte("beta")}
-	alpha := sha256.Sum256(items[0])
-	beta := sha256.Sum256(items[1])
-	items_hashed := [][]byte{alpha[:32], beta[:32]}
-
-	treeHashedLeaves := NewTree()
-	err := treeHashedLeaves.Generate(items, h)
-	assert.Nil(t, err)
-
-	tree := NewTreeWithOpts(TreeOptions{false, true})
-	err = tree.Generate(items_hashed, h)
-	assert.Nil(t, err)
-	assert.Equal(t, tree.Root().Hash, treeHashedLeaves.Root().Hash)
-}
-
-func TestTreeGenerate_DisableHashLeaves_DynamicLeafLengths(t *testing.T) {
+func TestTreeGenerate_DynamicLeafLengths(t *testing.T) {
 	alpha := sha256.Sum256([]byte("alpha"))
 	beta := md5.Sum([]byte("beta"))
 	items := [][]byte{alpha[:], beta[:]}
 
-	tree := NewTreeWithOpts(TreeOptions{false, true})
-	err := tree.Generate(items, sha256.New())
+	tree := NewTree(sha256.New())
+	err := tree.generate(items)
 	assert.Nil(t, err)
 
 	alphaPlusBeta := append(alpha[:], beta[:]...)
 	expectedHash := sha256.Sum256(alphaPlusBeta)
 
-	assert.Equal(t, expectedHash[:], tree.Root().Hash[:])
+	assert.Equal(t, expectedHash[:], tree.root().Hash[:])
 }
 
-func TestTreeGenerate_DisableHashLeaves_DynamicLeafLengths_EnableHashSorting(t *testing.T) {
+func TestTreeGenerate_DynamicLeafLengths_EnableHashSorting(t *testing.T) {
 	alpha := sha256.Sum256([]byte("alpha"))
 	beta := md5.Sum([]byte("beta"))
 	items := [][]byte{beta[:], alpha[:]}
 
-	tree := NewTreeWithOpts(TreeOptions{true, true})
-	err := tree.Generate(items, sha256.New())
+	tree := NewTreeWithHashSortingEnable(sha256.New())
+	err := tree.generate(items)
 	assert.Nil(t, err)
 
 	alphaPlusBeta := append(alpha[:], beta[:]...)
 	expectedHash := sha256.Sum256(alphaPlusBeta)
 
-	assert.Equal(t, expectedHash[:], tree.Root().Hash[:])
+	assert.Equal(t, expectedHash[:], tree.root().Hash[:])
 }
 
-func TestTreeGenerate_DisableHashLeaves_RightNil(t *testing.T) {
+func TestTreeGenerate_RightNil(t *testing.T) {
 	a := md5.Sum([]byte("a"))
 	b := md5.Sum([]byte("b"))
 	c := md5.Sum([]byte("c"))
 	items := [][]byte{a[:], b[:], c[:], nil}
 
-	tree := NewTreeWithOpts(TreeOptions{false, true})
-	err := tree.Generate(items, sha256.New())
+	tree := NewTree(sha256.New())
+	err := tree.generate(items)
 	assert.Nil(t, err)
 
 	ab := append(a[:], b[:]...)
@@ -535,24 +517,22 @@ func TestTreeGenerate_DisableHashLeaves_RightNil(t *testing.T) {
 	abc := append(ab_hashed[:], c[:]...)
 	expectedHash := sha256.Sum256(abc)
 
-	assert.Equal(t, expectedHash[:], tree.Root().Hash[:])
+	assert.Equal(t, expectedHash[:], tree.root().Hash[:])
 }
 
 func TestGenerateNodeHashOfUnbalance(t *testing.T) {
-	tree := Tree{}
-	tree.Options.EnableHashSorting = true
 	h := NewSimpleHash()
+	tree := NewTreeWithHashSortingEnable(h)
 
 	sampleLeft := []byte{203, 225, 206, 227, 57, 204, 31, 188, 40, 131, 158, 32, 174, 43, 15, 187, 176, 223, 90, 55, 162, 35, 25, 177, 219, 173, 93, 54, 138, 119, 188, 56}
-	n, err := tree.generateNode(sampleLeft, nil, h)
+	n, err := tree.generateNode(sampleLeft, nil)
 	assert.Nil(t, err)
 	assert.Equal(t, sampleLeft, n.Hash)
 }
 
 func TestGenerateNodeHashOrdered(t *testing.T) {
-	tree := Tree{}
-	tree.Options.EnableHashSorting = true
 	h := NewSimpleHash()
+	tree := NewTreeWithHashSortingEnable(h)
 
 	sampleLeft := []byte{203, 225, 206, 227, 57, 204, 31, 188, 40, 131, 158, 32, 174, 43, 15, 187, 176, 223, 90, 55, 162, 35, 25, 177, 219, 173, 93, 54, 138, 119, 188, 56}
 	sampleRight := []byte{193, 201, 112, 48, 157, 84, 238, 81, 120, 81, 228, 112, 38, 213, 168, 50, 37, 170, 137, 211, 44, 177, 75, 68, 152, 252, 54, 145, 145, 146, 154, 136}
@@ -562,14 +542,14 @@ func TestGenerateNodeHashOrdered(t *testing.T) {
 	copy(data[h.Size():], sampleLeft)
 
 	expected, _ := NewNode(h, data)
-	n, err := tree.generateNode(sampleLeft, sampleRight, h)
+	n, err := tree.generateNode(sampleLeft, sampleRight)
 	assert.Nil(t, err)
 	assert.Equal(t, expected.Hash, n.Hash)
 }
 
 func TestGenerateNodeHashStandard(t *testing.T) {
-	tree := Tree{}
 	h := NewSimpleHash()
+	tree := NewTree(h)
 	sampleLeft := []byte{203, 225, 206, 227, 57, 204, 31, 188, 40, 131, 158, 32, 174, 43, 15, 187, 176, 223, 90, 55, 162, 35, 25, 177, 219, 173, 93, 54, 138, 119, 188, 56}
 	sampleRight := []byte{193, 201, 112, 48, 157, 84, 238, 81, 120, 81, 228, 112, 38, 213, 168, 50, 37, 170, 137, 211, 44, 177, 75, 68, 152, 252, 54, 145, 145, 146, 154, 136}
 
@@ -578,67 +558,66 @@ func TestGenerateNodeHashStandard(t *testing.T) {
 	copy(data[h.Size():], sampleLeft)
 
 	expected, _ := NewNode(h, data)
-	n, err := tree.generateNode(sampleLeft, sampleRight, h)
+	n, err := tree.generateNode(sampleLeft, sampleRight)
 	assert.Nil(t, err)
 	assert.Equal(t, expected.Hash, n.Hash)
 }
 
 func TestHashOrderedTreeGenerate(t *testing.T) {
-	tree := Tree{}
-	tree.Options.EnableHashSorting = true
 	h := NewSimpleHash()
-
+	tree := NewTreeWithHashSortingEnable(h)
 	// Setup some dummy data
 	blockCount := 13
 	blockSize := 16
 	data := createDummyTreeData(blockCount, blockSize, true)
 
-	// Generate the tree
-	err := tree.Generate(data, h)
+	// generate the tree
+	err := tree.generate(data)
 	assert.Nil(t, err)
-	verifyGeneratedTree(t, &tree, h)
+	verifyGeneratedTree(t, tree, h)
 
 	// Generating with no blocks should return error
-	err = tree.Generate(make([][]byte, 0, 1), NewSimpleHash())
+	err = tree.generate(make([][]byte, 0, 1))
 	assert.NotNil(t, err)
 	assert.Equal(t, err.Error(), "Empty tree")
 }
 
 func TestGenerateFailedHash(t *testing.T) {
-	tree := NewTree()
+	tree := NewTree(NewFailingHash())
 	data := createDummyTreeData(16, 16, true)
 	// Fail hash during the leaf generation
-	err := tree.GenerateByTwoHashFunc(data, NewSimpleHash(), NewFailingHash())
+	err := tree.generate(data)
 	assert.NotNil(t, err)
 	assert.Equal(t, err.Error(), "Failed to write hash")
 
 	// Fail hash during internal node generation
 	data = createDummyTreeData(16, 16, true)
-	err = tree.GenerateByTwoHashFunc(data, NewFailingHashAt(7), NewSimpleHash())
+	tree = NewTree(NewFailingHashAt(7))
+	err = tree.generate(data)
 	assert.NotNil(t, err)
 	assert.Equal(t, err.Error(), "Failed to write hash")
 }
 
 func TestGetNodesAtHeight(t *testing.T) {
 	// ungenerate tree should return nil
-	tree := NewTree()
 	h := NewSimpleHash()
-	assert.Nil(t, tree.GetNodesAtHeight(1))
+	tree := NewTree(h)
+	assert.Nil(t, tree.getNodesAtHeight(1))
 
 	count := 15
 	size := 16
 	data := createDummyTreeData(count, size, true)
-	tree.Generate(data, NewSimpleHash())
-	verifyGeneratedTree(t, &tree, h)
+	tree.generate(data)
+	verifyGeneratedTree(t, tree, h)
 
 	// invalid height should return nil
-	assert.Nil(t, tree.GetNodesAtHeight(0))
-	assert.Nil(t, tree.GetNodesAtHeight(tree.Height()+1))
+	assert.Nil(t, tree.getNodesAtHeight(0))
+	assert.Nil(t, tree.getNodesAtHeight(tree.height()+1))
 
 	// check valid height = 1
-	nodes := tree.GetNodesAtHeight(tree.Height())
+	nodes := tree.getNodesAtHeight(tree.height())
 	assert.Equal(t, len(nodes), count)
-	expect := tree.Nodes[:count]
+	expect := tree.nodes[:count]
 	for i := 0; i < len(nodes); i++ {
 		assert.Equal(t, &expect[i], &nodes[i])
 	}
@@ -650,9 +629,7 @@ func simpleMerkle(data [][]byte) []byte {
 	// Build the leaves
 	h0 := make([][]byte, len(data))
 	for i, b := range data {
-		h.Reset()
-		h.Write(b)
-		h0[i] = h.Sum(nil)
+		h0[i] = b
 	}
 
 	h1 := make([][]byte, (len(h0)+len(h0)%2)/2)
@@ -678,35 +655,278 @@ func simpleMerkle(data [][]byte) []byte {
 	return h1[0]
 }
 
+func TestEmptyTree(t *testing.T) {
+	h := sha256.New()
+	tree := NewTree(h)
+	_, err := tree.GetMerkleProof(0)
+	assert.Equal(t, err.Error(), "Tree is empty")
+	assert.Nil(t, tree.RootHash())
+}
+
 func TestRootHashValue(t *testing.T) {
 	// Check the root hash made by Tree against a simpler implementation
 	// that finds only the root hash
-
-	tree := Tree{}
 	h := sha256.New()
+	tree := NewTree(h)
 	// Setup some dummy data
 	blockCount := 16
 	blockSize := 16
 	data := createDummyTreeData(blockCount, blockSize, true)
 
-	// Generate the tree
-	err := tree.Generate(data, h)
+	// generate the tree
+	err := tree.generate(data)
 	assert.Nil(t, err)
-	verifyGeneratedTree(t, &tree, h)
+	verifyGeneratedTree(t, tree, h)
 
 	// Calculate the root hash with the simpler method
 	merk := simpleMerkle(data)
 
-	assert.Equal(t, bytes.Equal(tree.Root().Hash, merk), true)
+	assert.Equal(t, bytes.Equal(tree.RootHash(), merk), true)
+}
+
+func TestGetMerkleProof1(t *testing.T) {
+	h := md5.New()
+	treeData := createDummyTreeData(15, h.Size(), true)
+	tree := NewTree(h)
+	err := tree.Generate(treeData, 0)
+	assert.Nil(t, err)
+
+	inputs := []uint{
+		0,
+		1,
+		2,
+		3,
+		4,
+		5,
+		6,
+		7,
+		12,
+		13,
+		14, // Lone child edge case*/
+	}
+
+	results := [][]ProofNode{
+		// 0, 15
+		[]ProofNode{
+			ProofNode{false, tree.nodes[1].Hash},
+			ProofNode{false, tree.nodes[16].Hash},
+			ProofNode{false, tree.nodes[24].Hash},
+			ProofNode{false, tree.nodes[28].Hash},
+		},
+		// 1, 15
+		[]ProofNode{
+			ProofNode{true, tree.nodes[0].Hash},
+			ProofNode{false, tree.nodes[16].Hash},
+			ProofNode{false, tree.nodes[24].Hash},
+			ProofNode{false, tree.nodes[28].Hash},
+		},
+		// 2, 15
+		[]ProofNode{
+			ProofNode{false, tree.nodes[3].Hash},
+			ProofNode{true, tree.nodes[15].Hash},
+			ProofNode{false, tree.nodes[24].Hash},
+			ProofNode{false, tree.nodes[28].Hash},
+		},
+		// 3, 15
+		[]ProofNode{
+			ProofNode{true, tree.nodes[2].Hash},
+			ProofNode{true, tree.nodes[15].Hash},
+			ProofNode{false, tree.nodes[24].Hash},
+			ProofNode{false, tree.nodes[28].Hash},
+		},
+		// 4, 15
+		[]ProofNode{
+			ProofNode{false, tree.nodes[5].Hash},
+			ProofNode{false, tree.nodes[18].Hash},
+			ProofNode{true, tree.nodes[23].Hash},
+			ProofNode{false, tree.nodes[28].Hash},
+		},
+		// 5, 15
+		[]ProofNode{
+			ProofNode{true, tree.nodes[4].Hash},
+			ProofNode{false, tree.nodes[18].Hash},
+			ProofNode{true, tree.nodes[23].Hash},
+			ProofNode{false, tree.nodes[28].Hash},
+		},
+		// 6, 15
+		[]ProofNode{
+			ProofNode{false, tree.nodes[7].Hash},
+			ProofNode{true, tree.nodes[17].Hash},
+			ProofNode{true, tree.nodes[23].Hash},
+			ProofNode{false, tree.nodes[28].Hash},
+		},
+		// 7, 15
+		[]ProofNode{
+			ProofNode{true, tree.nodes[6].Hash},
+			ProofNode{true, tree.nodes[17].Hash},
+			ProofNode{true, tree.nodes[23].Hash},
+			ProofNode{false, tree.nodes[28].Hash},
+		},
+		// 12, 15
+		[]ProofNode{
+			ProofNode{false, tree.nodes[13].Hash},
+			ProofNode{false, tree.nodes[22].Hash},
+			ProofNode{true, tree.nodes[25].Hash},
+			ProofNode{true, tree.nodes[27].Hash},
+		},
+		// 13, 15
+		[]ProofNode{
+			ProofNode{true, tree.nodes[12].Hash},
+			ProofNode{false, tree.nodes[22].Hash},
+			ProofNode{true, tree.nodes[25].Hash},
+			ProofNode{true, tree.nodes[27].Hash},
+		},
+		// 14, 15
+		[]ProofNode{
+			ProofNode{true, tree.nodes[21].Hash},
+			ProofNode{true, tree.nodes[25].Hash},
+			ProofNode{true, tree.nodes[27].Hash},
+		},
+	}
+
+	for i, input := range inputs {
+		r, _ := tree.GetMerkleProof(input)
+		assert.Equal(t,
+			len(results[i]),
+			len(r),
+			fmt.Sprintf("GetMerkleProof(%d), Result Length Mismatch", input))
+
+		for j, n := range r {
+			assert.Equal(t,
+				results[i][j].Left,
+				n.Left,
+				fmt.Sprintf("GetMerkleProof(%d), node #: %d, %t", input, j, results[i][j].Left))
+
+			assert.Equal(t,
+				results[i][j].Hash,
+				n.Hash,
+				fmt.Sprintf("GetMerkleProof(%d) hash %d was leaf %d expected %d", input, j, n.Hash, results[i][j].Hash))
+		}
+	}
+
+}
+
+func TestGetMerkleProof2(t *testing.T) {
+	// 15, 16
+	h := md5.New()
+	treeData := createDummyTreeData(16, h.Size(), true)
+	tree := NewTree(h)
+	err := tree.Generate(treeData, 0)
+	assert.Nil(t, err)
+
+	result := []ProofNode{
+		ProofNode{true, tree.nodes[14].Hash},
+		ProofNode{true, tree.nodes[22].Hash},
+		ProofNode{true, tree.nodes[26].Hash},
+		ProofNode{true, tree.nodes[28].Hash},
+	}
+	proof, err := tree.GetMerkleProof(15)
+	assert.Equal(t, result, proof)
+
+	//0 , 2
+	treeData = createDummyTreeData(2, h.Size(), true)
+	tree = NewTree(h)
+	err = tree.Generate(treeData, 0)
+	assert.Nil(t, err)
+	result = []ProofNode{
+		ProofNode{false, tree.nodes[1].Hash},
+	}
+	proof, err = tree.GetMerkleProof(0)
+	assert.Equal(t, result, proof)
+
+	// 4 Leaf Tree:
+	//       6
+	//   4       5
+	// 0   1   2   3
+	//
+	// 0, 4
+	treeData = createDummyTreeData(4, h.Size(), true)
+	tree = NewTree(h)
+	err = tree.Generate(treeData, 0)
+	assert.Nil(t, err)
+	result = []ProofNode{
+
+		ProofNode{false, tree.nodes[1].Hash},
+		ProofNode{false, tree.nodes[5].Hash},
+	}
+	proof, err = tree.GetMerkleProof(0)
+	assert.Equal(t, result, proof)
+
+	// 3 Leaf Tree:
+	//     5
+	//   3    4 (2)
+	// 0   1   2
+	//
+	// 2, 3
+	treeData = createDummyTreeData(3, h.Size(), true)
+	tree = NewTree(h)
+	err = tree.Generate(treeData, 0)
+	assert.Nil(t, err)
+	result = []ProofNode{
+		ProofNode{true, tree.nodes[3].Hash},
+	}
+	proof, err = tree.GetMerkleProof(2)
+	assert.Equal(t, result, proof)
+
+	// 5 Leaf Tree:
+	//             8
+	//        8        9 (4)
+	//   5       6     7 (4)
+	// 0   1   2   3   4
+	//
+	// 2, 5
+
+	treeData = createDummyTreeData(5, h.Size(), true)
+	tree = NewTree(h)
+	err = tree.Generate(treeData, 0)
+	assert.Nil(t, err)
+	result = []ProofNode{
+		ProofNode{false, tree.nodes[3].Hash},
+		ProofNode{true, tree.nodes[5].Hash},
+		ProofNode{false, tree.nodes[9].Hash},
+	}
+	proof, err = tree.GetMerkleProof(2)
+	assert.Equal(t, result, proof)
+
+	// 7 Leaf Tree:
+	//               14
+	//        11              12
+	//   7       8       9     10 (6)
+	// 0   1   2   3   4   5   6
+	//
+	// 6, 7
+
+	treeData = createDummyTreeData(7, h.Size(), true)
+	tree = NewTree(h)
+	err = tree.Generate(treeData, 0)
+	assert.Nil(t, err)
+	result = []ProofNode{
+		ProofNode{true, tree.nodes[9].Hash},
+		ProofNode{true, tree.nodes[11].Hash},
+	}
+	proof, err = tree.GetMerkleProof(6)
+	assert.Equal(t, result, proof)
+}
+
+func TestGetMerkleProof3(t *testing.T) {
+	// 16, 16
+	h := md5.New()
+	treeData := createDummyTreeData(16, h.Size(), true)
+	tree := NewTree(h)
+	err := tree.Generate(treeData, 0)
+	assert.Nil(t, err)
+
+	_, err = tree.GetMerkleProof(16)
+	assert.Equal(t, err.Error(), "node index is too big for node count")
 }
 
 /* Benchmarks */
 
 func generateBenchmark(b *testing.B, data [][]byte, hashf hash.Hash) {
-	tree := NewTree()
+	tree := NewTree(hashf)
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		tree.Generate(data, hashf)
+		tree.generate(data)
 	}
 }
 
@@ -758,20 +978,15 @@ func BenchmarkGenerate_1GB_2MB_SHA256(b *testing.B) {
 func Example_complete() {
 	items := [][]byte{[]byte("alpha"), []byte("beta"), []byte("gamma"), []byte("delta"), []byte("epsilon")}
 
-	treeOptions := TreeOptions{
-		EnableHashSorting: false,
-		DisableHashLeaves: false,
-	}
-
-	tree := NewTreeWithOpts(treeOptions)
-	err := tree.Generate(items, md5.New())
+	tree := NewTree(md5.New())
+	err := tree.generate(items)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
 
-	fmt.Printf("Height: %d\n", tree.Height())
-	fmt.Printf("Root: %v\n", tree.Root())
-	fmt.Printf("N Leaves: %v\n", len(tree.Leaves()))
-	fmt.Printf("Height 2: %v\n", tree.GetNodesAtHeight(2))
+	fmt.Printf("Height: %d\n", tree.height())
+	fmt.Printf("Root: %v\n", tree.root())
+	fmt.Printf("N Leaves: %v\n", len(tree.leaves()))
+	fmt.Printf("Height 2: %v\n", tree.getNodesAtHeight(2))
 }
