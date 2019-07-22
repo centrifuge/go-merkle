@@ -107,7 +107,7 @@ func (self *Tree) generate(blocks [][]byte) error {
 func (self *Tree) GetMerkleProof(leafIndex uint) ([]ProofNode, error) {
 	leafCount := len(self.leaves())
 	if leafCount == 0 {
-		return nil, errors.New("SMT tree is not filled")
+		return nil, errors.New("Tree is empty")
 	}
 
 	if leafIndex >= uint(leafCount) {
@@ -178,10 +178,8 @@ func (self *Tree) height() uint64 {
 // Creates all the non-leaf nodes for a certain height. The number of nodes
 // is calculated to be 1/2 the number of nodes in the lower rung.  The newly
 // created nodes will reference their Left and Right children.
-// Returns the number of nodes added to current
+// Returns the number of nodes added to current level
 func (self *Tree) generateNodeLevel(below []Node, current []Node) (uint64, error) {
-	//	self.nonLeafHashFunc.Reset()
-
 	end := (len(below) + (len(below) % 2)) / 2
 	for i := 0; i < end; i++ {
 		// Concatenate the two children hashes and hash them, if both are
