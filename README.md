@@ -4,7 +4,7 @@ go-merkle
 [![Travis CI](https://api.travis-ci.org/xsleonard/go-merkle.svg?branch=master)](https://travis-ci.org/xsleonard/go-merkle)
 [![codecov](https://codecov.io/gh/xsleonard/go-merkle/branch/master/graph/badge.svg)](https://codecov.io/gh/xsleonard/go-merkle)
 
-A fixed Merkle Tree implementation in Go
+Two kinds of Merkle Tree implementation in Go
 
 Example Use
 ===========
@@ -43,20 +43,50 @@ func main() {
     blocks := splitData(data, 32)
 
     // Create & generate the tree
-    tree := merkle.NewTree()
+    tree := merkle.NewTree(md5.New())
     // Create & generate the tree with sorted hashes
     // A tree with pair wise sorted hashes allows for a representation of proofs which are more space efficient
-    //tree := merkle.NewTreeWithOpts(TreeOptions{EnableHashSorting: true})
-    err = tree.Generate(blocks, md5.New())
+    // tree := merkle.NewTreeWithHashSortingEnable(md5.New())
+    err = tree.Generate(blocks, 0)
     if err != nil {
         fmt.Println(err)
         return
     }
 
-    fmt.Printf("Height: %d\n", tree.Height())
-    fmt.Printf("Root: %v\n", tree.Root())
-    fmt.Printf("N Leaves: %v\n", len(tree.Leaves()))
-    fmt.Printf("Height 2: %v\n", tree.GetNodesAtHeight(2))
+    proof, err := tree.GetMerkleProof(0)
+        if err != nil {
+        fmt.Println(err)
+        return
+    }
+
+    fmt.Printf("Root Hash: %v\n", tree.RootHash())
+    fmt.Prinff("Proof of first leaf: %v\n", proof)
+
+
+    // Create & generate sparse tree
+    hashFunc := md5.New()
+    _, err := hashFunc.Write([]byte{})
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+    emptyLeafHash := h.Sum(nil)
+    tree := merkle.NewSMT(emptyLeafHash, md5.New())
+
+    err = tree.Generate(blocks, 64)
+    if err != nil {
+        fmt.Println(err)
+        return
+    }
+
+    proof, err := tree.GetMerkleProof(0)
+        if err != nil {
+        fmt.Println(err)
+        return
+    }
+
+    fmt.Printf("Root Hash: %v\n", tree.RootHash())
+    fmt.Prinff("Proof of first leaf: %v\n", proof)
 }
 
 ```
