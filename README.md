@@ -4,7 +4,7 @@ go-merkle
 [![Travis CI](https://api.travis-ci.org/xsleonard/go-merkle.svg?branch=master)](https://travis-ci.org/xsleonard/go-merkle)
 [![codecov](https://codecov.io/gh/xsleonard/go-merkle/branch/master/graph/badge.svg)](https://codecov.io/gh/xsleonard/go-merkle)
 
-Two kinds of Merkle Tree implementation in Go
+Two kinds of Merkle Tree implementation in Go. Here SMT is not a standard sparse merkle tree. This SMT implementation will arrange all empty leaves in rightmost positions (so normal leaves are not in random positions, they lies in leftmost) and count of total leaves is power of 2, so it can be used in some specific scenarios.
 
 Example Use
 ===========
